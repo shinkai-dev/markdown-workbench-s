@@ -11,7 +11,7 @@ window.MarkdownViewer = window.MarkdownViewer || {};
   }
 
   function errorHtml(message) {
-    return '<div class="mermaid-error"><strong>'+M.t('mermaidError')+'</strong><div>' + escapeText(message) + '</div></div>';
+    return '<div class="mermaid-error"><strong>Mermaid描画エラー</strong><div>' + escapeText(message) + '</div></div>';
   }
 
   function makeBlock(source) {
@@ -20,13 +20,26 @@ window.MarkdownViewer = window.MarkdownViewer || {};
     block.setAttribute('data-mermaid-block', 'true');
     block.innerHTML =
       '<div class="mermaid-toolbar"><strong>Mermaid</strong><span class="spacer"></span>' +
-      '<button type="button" class="toolbar-btn mermaid-zoom-out" title="'+M.t('zoomOut')+'">−</button>' +
-      '<button type="button" class="toolbar-btn mermaid-zoom-reset" title="100%">100%</button>' +
-      '<button type="button" class="toolbar-btn mermaid-zoom-in" title="'+M.t('zoomIn')+'">+</button>' +
-      '<button type="button" class="toolbar-btn mermaid-source-toggle" aria-pressed="false">'+M.t('source')+'</button>' +
-      '<button type="button" class="toolbar-btn mermaid-redraw">'+M.t('redraw')+'</button>' +
+      '<button type="button" class="toolbar-btn mermaid-zoom-out" title="'+M.t('mermaidZoomOut')+'" aria-label="'+M.t('mermaidZoomOut')+'">−</button>' +
+      '<select class="toolbar-select mermaid-zoom-select" title="'+M.t('mermaidZoom')+'" aria-label="'+M.t('mermaidZoom')+'">' +
+      '<option value="0.5">50%</option>' +
+      '<option value="0.67">67%</option>' +
+      '<option value="0.75">75%</option>' +
+      '<option value="0.8">80%</option>' +
+      '<option value="0.9">90%</option>' +
+      '<option value="1" selected>100%</option>' +
+      '<option value="1.1">110%</option>' +
+      '<option value="1.25">125%</option>' +
+      '<option value="1.5">150%</option>' +
+      '<option value="1.75">175%</option>' +
+      '<option value="2">200%</option>' +
+      '<option value="2.5">250%</option>' +
+      '<option value="3">300%</option>' +
+      '</select>' +
+      '<button type="button" class="toolbar-btn mermaid-zoom-in" title="'+M.t('mermaidZoomIn')+'" aria-label="'+M.t('mermaidZoomIn')+'">+</button>' +
+      '<button type="button" class="toolbar-btn mermaid-source-toggle" aria-pressed="false">'+M.t('mermaidSource')+'</button>' +
       '</div>' +
-      '<div class="mermaid-canvas" role="img" aria-label="'+M.t('mermaidDiagram')+'"></div>' +
+      '<div class="mermaid-canvas" role="img" aria-label="Mermaid図"></div>' +
       '<pre class="mermaid-source"><code>' + escapeText(source) + '</code></pre>';
     block._mermaidSource = source;
     return block;
@@ -54,10 +67,10 @@ window.MarkdownViewer = window.MarkdownViewer || {};
 
     var scale = scales.get(block) || 1;
     canvas.setAttribute('aria-busy', 'true');
-    canvas.innerHTML = '<div class="mermaid-loading">'+M.t('rendering')+'</div>';
+    canvas.innerHTML = '<div class="mermaid-loading">図を描画しています…</div>';
 
     if (!window.mermaid || typeof window.mermaid.render !== 'function') {
-      canvas.innerHTML = errorHtml('Mermaid is not loaded. Place the official Mermaid 10.9.8 UMD build at vendor/mermaid.min.js.');
+      canvas.innerHTML = errorHtml('Mermaidが読み込まれていません。vendor/mermaid.min.js に公式Mermaid 10.9.8のUMD版を配置してください。');
       canvas.removeAttribute('aria-busy');
       return Promise.resolve();
     }
@@ -75,7 +88,7 @@ window.MarkdownViewer = window.MarkdownViewer || {};
         var id = 'mv-mermaid-' + (++sequence);
         var result = await window.mermaid.render(id, code);
         if (!result || typeof result.svg !== 'string') {
-          throw new Error('Mermaid.render() did not return SVG.');
+          throw new Error('Mermaid.render() がSVGを返しませんでした。');
         }
 
         // Critical: result.svg comes directly from Mermaid. Do not pass it through
@@ -105,26 +118,53 @@ window.MarkdownViewer = window.MarkdownViewer || {};
     if (block.dataset.bound === '1') return;
     block.dataset.bound = '1';
 
+    var zoomSelect = block.querySelector('.mermaid-zoom-select');
+    var zoomLevels = Array.prototype.map.call(zoomSelect.options, function (option) { return Number(option.value); });
+    function syncZoomSelect() {
+      var current = scales.get(block) || 1;
+      var nearest = zoomLevels.reduce(function (best, value) {
+        return Math.abs(value - current) < Math.abs(best - current) ? value : best;
+      }, zoomLevels[0]);
+      zoomSelect.value = String(nearest);
+    }
     block.querySelector('.mermaid-zoom-in').addEventListener('click', function () {
-      scales.set(block, Math.min(3, (scales.get(block) || 1) + 0.1));
+      var current = scales.get(block) || 1;
+      var index = zoomLevels.findIndex(function (value) { return value >= current - 0.0001; });
+      if (index < 0) index = zoomLevels.length - 1;
+      if (zoomLevels[index] <= current + 0.0001) index++;
+      scales.set(block, zoomLevels[Math.min(zoomLevels.length - 1, index)]);
+      syncZoomSelect();
       draw(block);
     });
     block.querySelector('.mermaid-zoom-out').addEventListener('click', function () {
-      scales.set(block, Math.max(0.4, (scales.get(block) || 1) - 0.1));
+      var current = scales.get(block) || 1;
+      var index = zoomLevels.findIndex(function (value) { return value >= current - 0.0001; });
+      if (index < 0) index = zoomLevels.length - 1;
+      if (zoomLevels[index] >= current - 0.0001) index--;
+      scales.set(block, zoomLevels[Math.max(0, index)]);
+      syncZoomSelect();
       draw(block);
     });
-    block.querySelector('.mermaid-zoom-reset').addEventListener('click', function () {
-      scales.set(block, 1);
+    zoomSelect.addEventListener('change', function () {
+      scales.set(block, Number(this.value));
       draw(block);
     });
-    block.querySelector('.mermaid-redraw').addEventListener('click', function () {
-      draw(block);
-    });
+    syncZoomSelect();
     block.querySelector('.mermaid-source-toggle').addEventListener('click', function () {
       var show = block.classList.toggle('show-source');
       this.setAttribute('aria-pressed', String(show));
     });
   }
+
+  M.refreshMermaidText = function () {
+    document.querySelectorAll('.mermaid-block[data-mermaid-block="true"]').forEach(function (block) {
+      var out=block.querySelector('.mermaid-zoom-out'); if(out){out.title=M.t('mermaidZoomOut');out.setAttribute('aria-label',M.t('mermaidZoomOut'));}
+      var sel=block.querySelector('.mermaid-zoom-select'); if(sel){sel.title=M.t('mermaidZoom');sel.setAttribute('aria-label',M.t('mermaidZoom'));}
+      var inn=block.querySelector('.mermaid-zoom-in'); if(inn){inn.title=M.t('mermaidZoomIn');inn.setAttribute('aria-label',M.t('mermaidZoomIn'));}
+      var src=block.querySelector('.mermaid-source-toggle'); if(src)src.textContent=M.t('mermaidSource');
+      var canvas=block.querySelector('.mermaid-canvas'); if(canvas)canvas.setAttribute('aria-label',M.t('mermaidDiagram'));
+    });
+  };
 
   M.renderMermaid = function (root) {
     if (!root) return;

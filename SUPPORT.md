@@ -1,13 +1,7 @@
 # Support
 
-If you find a bug or have a feature request, please open an issue in the GitHub repository:
+For bug reports and feature requests, please use the GitHub issue tracker:
 
 https://github.com/shinkai-dev/markdown-workbench-s/issues
 
-When reporting a problem, please include:
-
-- VS Code version
-- Operating system
-- Markdown Workbench S version
-- Steps to reproduce the issue
-- Relevant error messages or screenshots
+When reporting a problem, include the VS Code version, extension version, operating system, and steps to reproduce the issue.
