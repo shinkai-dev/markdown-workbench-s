@@ -1,0 +1,54 @@
+{
+  "name": "markdown-workbench-s",
+  "displayName": "Markdown Workbench S",
+  "description": "A Markdown workspace for VS Code with powerful table filtering and sorting, plus Mermaid, TOC, search, and source navigation.",
+  "version": "1.0.0",
+  "publisher": "Shinkai",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onCommand:markdownWorkbenchS.openPreview"
+  ],
+  "main": "extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "markdownWorkbenchS.openPreview",
+        "title": "Markdown Workbench S: Open Preview"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "markdownWorkbenchS.openPreview",
+          "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .mdown || resourceExtname == .mkdn || resourceExtname == .txt",
+          "group": "navigation@50"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "markdownWorkbenchS.openPreview",
+          "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .mdown || resourceExtname == .mkdn || resourceExtname == .txt",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "keywords": [
+    "markdown",
+    "table",
+    "filter",
+    "sorting",
+    "preview",
+    "mermaid",
+    "documentation",
+    "toc"
+  ],
+  "icon": "icon.png"
+}
