@@ -1,7 +1,7 @@
 {
   "name": "markdown-workbench-s",
   "displayName": "Markdown Workbench S",
-  "description": "A Markdown workspace for VS Code with powerful table filtering and sorting, plus Mermaid, TOC, search, and source navigation.",
+  "description": "A feature-rich Markdown preview for VS Code with powerful table filtering and sorting, Mermaid diagrams, search, and source navigation.",
   "version": "1.0.0",
   "publisher": "Shinkai",
   "license": "MIT",
@@ -16,6 +16,19 @@
     "onCommand:markdownWorkbenchS.openPreview"
   ],
   "main": "extension.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shinkai-dev/markdown-workbench-s.git"
+  },
+  "homepage": "https://github.com/shinkai-dev/markdown-workbench-s#readme",
+  "bugs": {
+    "url": "https://github.com/shinkai-dev/markdown-workbench-s/issues"
+  },
+  "galleryBanner": {
+    "color": "#1f2937",
+    "theme": "dark"
+  },
+  "pricing": "Free",
   "contributes": {
     "commands": [
       {
@@ -42,13 +55,14 @@
   },
   "keywords": [
     "markdown",
+    "markdown preview",
     "table",
-    "filter",
-    "sorting",
-    "preview",
+    "table filter",
+    "table sorting",
     "mermaid",
     "documentation",
-    "toc"
+    "toc",
+    "source navigation"
   ],
   "icon": "icon.png"
 }
