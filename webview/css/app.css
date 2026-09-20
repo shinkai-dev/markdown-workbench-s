@@ -464,6 +464,13 @@ a:focus-visible {
   margin-bottom: 7px
 }
 
+/* Table action buttons: compact text so the table content remains the visual focus. */
+.table-toolbar button,
+.table-toolbar .table-toggle {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.55rem;
+}
+
 .table-label {
   font-size: 12px;
   color: var(--muted);
