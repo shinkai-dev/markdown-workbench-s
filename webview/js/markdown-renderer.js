@@ -261,9 +261,7 @@ window.MarkdownViewer = window.MarkdownViewer || {};
         var head = document.createElement('div');
         head.className = 'code-head';
         head.innerHTML = '<span class="code-lang"></span><span class="spacer"></span>' +
-          '<button type="button" class="toolbar-btn code-copy">'+M.t('codeCopy')+'</button>' +
-          '<button type="button" class="toolbar-btn code-wrap-toggle" aria-pressed="false">'+M.t('codeWrap')+'</button>' +
-          '<button type="button" class="toolbar-btn code-collapse" aria-expanded="true">'+M.t('codeCollapse')+'</button>';
+          '<button type="button" class="toolbar-btn code-copy">'+M.t('codeCopy')+'</button>';
         head.querySelector('.code-lang').textContent = lang;
 
         pre.parentNode.insertBefore(wrapper, pre);
@@ -275,9 +273,8 @@ window.MarkdownViewer = window.MarkdownViewer || {};
 
   M.refreshCodeText = function () {
     document.querySelectorAll('.code-wrap').forEach(function (wrap) {
-      var copy = wrap.querySelector('.code-copy'); if (copy) { copy.textContent = M.t('codeCopy'); copy.title = M.t('codeCopy'); copy.setAttribute('aria-label', M.t('codeCopy')); }
-      var toggle = wrap.querySelector('.code-wrap-toggle'); if (toggle) { toggle.textContent = M.t('codeWrap'); toggle.title = M.t('codeWrap'); toggle.setAttribute('aria-label', M.t('codeWrap')); }
-      var collapse = wrap.querySelector('.code-collapse'); if (collapse) { var expanded = collapse.getAttribute('aria-expanded') !== 'false'; collapse.textContent = expanded ? M.t('codeCollapse') : M.t('codeExpand'); collapse.title = expanded ? M.t('codeCollapse') : M.t('codeExpand'); collapse.setAttribute('aria-label', expanded ? M.t('codeCollapse') : M.t('codeExpand')); }
+      var copy = wrap.querySelector('.code-copy');
+      if (copy) { copy.textContent = M.t('codeCopy'); copy.title = M.t('codeCopy'); copy.setAttribute('aria-label', M.t('codeCopy')); }
     });
   };
 
@@ -290,8 +287,6 @@ window.MarkdownViewer = window.MarkdownViewer || {};
         escapeHtml(safeLang) +
         '</span><span class="spacer"></span>' +
         '<button type="button" class="toolbar-btn code-copy">'+M.t('codeCopy')+'</button>' +
-        '<button type="button" class="toolbar-btn code-wrap-toggle" aria-pressed="false">'+M.t('codeWrap')+'</button>' +
-        '<button type="button" class="toolbar-btn code-collapse" aria-expanded="true">'+M.t('codeCollapse')+'</button>' +
         '</div><pre><code class="language-' + escapeHtml(safeLang) + '">' + highlighted + '</code></pre></div>';
     });
   }

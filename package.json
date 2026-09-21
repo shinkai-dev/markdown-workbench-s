@@ -2,7 +2,7 @@
   "name": "markdown-workbench-s",
   "displayName": "Markdown Workbench S",
   "description": "A feature-rich Markdown preview extension for VS Code with powerful table filtering, sorting, column tools, Mermaid, TOC, search, and source navigation.",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "publisher": "Shinkai",
   "license": "MIT",
   "engines": {

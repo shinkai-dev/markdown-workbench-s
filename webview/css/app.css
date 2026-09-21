@@ -192,7 +192,7 @@ a:focus-visible {
 .reading-toolbar {
   position: sticky;
   top: 58px;
-  z-index: 5;
+  z-index: 90;
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
@@ -208,7 +208,7 @@ a:focus-visible {
 
 .doc {
   width: var(--doc-width, 1000px);
-  max-width: calc(100% - 36px);
+  max-width: min(calc(100% - 36px), var(--doc-max-width, 1400px));
   margin: 32px auto 80px;
   font-size: var(--font-size, 16px);
   line-height: var(--line-height, 1.85)
@@ -347,10 +347,6 @@ a:focus-visible {
   counter-reset: line
 }
 
-.code-wrap.wrap-lines code {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere
-}
 
 .code-line {
   display: block;
@@ -368,9 +364,6 @@ a:focus-visible {
   user-select: none
 }
 
-.code-wrap.is-collapsed pre {
-  display: none
-}
 
 .empty {
   min-height: calc(100vh - 58px);
@@ -495,6 +488,8 @@ a:focus-visible {
 
 .table-scroll table {
   min-width: max-content;
+  width: max-content;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0
 }
@@ -612,10 +607,15 @@ a:focus-visible {
   flex: 1
 }
 
+.mermaid-toolbar .toolbar-btn {
+  font-size: 0.8rem;
+  padding: 5px 8px
+}
+
 .mermaid-toolbar .toolbar-select {
-  min-width: 76px;
-  height: 32px;
-  padding: 0 26px 0 9px;
+  min-width: 70px;
+  height: 29px;
+  padding: 0 22px 0 8px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--surface);
@@ -630,9 +630,15 @@ a:focus-visible {
 }
 
 .mermaid-canvas {
-  overflow: auto;
-  min-height: 80px;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 220px;
+  height: 360px;
+  max-width: 100%;
   padding: 0;
+  position: relative;
+  resize: both;
+  box-sizing: border-box;
   text-align: left;
   cursor: grab;
   user-select: none;
@@ -645,8 +651,10 @@ a:focus-visible {
 
 .mermaid-stage {
   position: relative;
-  min-width: 100%;
-  min-height: 160px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .mermaid-svg-holder {
@@ -1309,14 +1317,270 @@ a:focus-visible {
   --mv-code-meta: #ff79c6;
 }
 
-/* v1.1.1 final: sidebar state must be authoritative on desktop and mobile. */
-.sidebar { transition: transform .18s ease, opacity .18s ease; }
-@media(min-width:901px) {
-  .workspace.sidebar-collapsed { margin-left: 0 !important; }
-  .workspace.sidebar-collapsed .sidebar { transform: translateX(-105%) !important; visibility: hidden; pointer-events: none; }
-  .workspace:not(.sidebar-collapsed) .sidebar { transform: translateX(0) !important; visibility: visible; pointer-events: auto; }
+/* v31: responsive column actions. Default is always horizontal.
+   Actions do not contribute to the column's minimum content width, so every
+   column can be narrowed directly; only explicitly narrowed columns stack. */
+.table-scroll th,
+.table-scroll td {
+  min-width: 0;
+  max-width: 1200px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
-@media(max-width:900px) {
-  .workspace.sidebar-collapsed .sidebar { transform: translateX(-105%) !important; visibility: hidden; pointer-events: none; }
-  .workspace:not(.sidebar-collapsed) .sidebar { transform: translateX(0) !important; visibility: visible; pointer-events: auto; }
+
+.table-scroll th {
+  position: relative;
+  min-width: 0;
+  padding: .55rem .45rem;
+  vertical-align: top;
 }
+
+/* The label and action controls occupy separate visual areas.
+   This keeps the default horizontal controls from ever sitting on top of text. */
+.table-scroll th .column-title {
+  display: block;
+  min-width: 0;
+  padding-right: 78px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.table-scroll th .column-actions {
+  position: absolute;
+  top: .55rem;
+  right: .45rem;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  z-index: 4;
+}
+
+.table-scroll th .column-actions button {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 21px;
+  min-width: 22px;
+  padding: 0;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* The normal state remains horizontal regardless of how narrow the column is. */
+.table-scroll th.mv-column-compact .column-actions {
+  gap: 2px;
+  right: 2px;
+}
+
+.table-scroll th.mv-column-compact .column-actions button {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+}
+
+/* Once the user explicitly narrows a column below the threshold, stack the
+   controls for every column, not just the first one. In this state the small
+   vertical action group participates in the header layout, but its width is
+   only that of one icon. */
+.table-scroll th.mv-column-vertical {
+  min-width: 0;
+  width: 48px;
+}
+
+.table-scroll th.mv-column-vertical .column-title {
+  padding-right: 0;
+}
+
+.table-scroll th.mv-column-vertical .column-actions {
+  position: relative;
+  top: auto;
+  right: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  width: 20px;
+  margin: 4px auto 0;
+  padding: 4px 0 0;
+  border-left: 0;
+  border-top: 1px solid var(--border);
+}
+
+.table-scroll th.mv-column-vertical .column-actions button {
+  width: 20px;
+  min-width: 20px;
+  height: 19px;
+}
+
+.table-scroll th .column-sort,
+.table-scroll th .column-filter,
+.table-scroll th .column-copy {
+  flex: 0 0 auto;
+}
+
+.table-scroll th .column-resizer {
+  right: -5px;
+  width: 10px;
+}
+\n\n/* v36: deterministic per-column action layout.\n   The resize handle belongs strictly to its own TH so neighbouring handles\n   cannot steal pointer events. The column's <col> width is the only trigger\n   for switching the action group to vertical. */\n.table-scroll th .column-resizer {\n  right: 0;\n  top: 0;\n  width: 7px;\n  height: 100%;\n  z-index: 10;\n}\n\n.table-scroll th.mv-column-vertical {\n  width: auto;\n  min-width: 0;\n}\n\n.table-scroll th.mv-column-vertical .column-title {\n  display: block;\n  width: 100%;\n  padding-right: 0;\n}\n\n.table-scroll th.mv-column-vertical .column-actions {\n  position: relative;\n  top: auto;\n  right: auto;\n  width: 20px;\n  margin: 5px auto 0;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 2px;\n  border-top: 1px solid var(--border);\n  padding-top: 4px;\n}\n\n.table-scroll th.mv-column-vertical .column-actions button {\n  width: 20px;\n  min-width: 20px;\n  height: 19px;\n  flex: 0 0 19px;\n}\n\n/* Do not let action controls or the label capture the resize strip. */\n.table-scroll th .column-actions,\n.table-scroll th .column-title {\n  pointer-events: auto;\n}\n
+/* v45: stable collapsible table-of-contents sidebar */
+.sidebar-head {
+  position: relative;
+  min-height: 30px;
+  padding-right: 38px;
+}
+
+.sidebar-head .toc-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  line-height: 1;
+  flex: 0 0 30px;
+}
+
+.toc-reopen {
+  position: fixed;
+  left: 10px;
+  top: 72px;
+  z-index: 50;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.toc-reopen[hidden] {
+  display: none;
+}
+
+@media (min-width: 901px) {
+  .workspace {
+    margin-left: 280px;
+    transition: margin-left .18s ease;
+  }
+
+  .workspace.sidebar-collapsed {
+    margin-left: 0;
+  }
+
+  .workspace.sidebar-collapsed .sidebar {
+    transform: translateX(-105%);
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .sidebar-head .toc-toggle {
+    display: inline-flex;
+  }
+
+  .toc-reopen {
+    top: 68px;
+    left: 8px;
+  }
+
+  .workspace.sidebar-collapsed .sidebar {
+    transform: translateX(-105%);
+  }
+}
+
+/* v47: compact TOC controls. The collapsed-menu button lives inside the
+   reading toolbar, immediately to the left of the status/text area, so it
+   never overlaps the document-width controls. */
+.reading-toolbar .toc-reopen {
+  position: static;
+  inset: auto;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  flex: 0 0 30px;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.reading-toolbar .toc-reopen[hidden] {
+  display: none;
+}
+
+
+/* v50: keep the status/document-width toolbar fixed below the main header.
+   The toolbar is viewport-fixed so it remains visible regardless of the
+   document's scrolling context. Its horizontal position follows the TOC. */
+.reading-toolbar {
+  position: fixed;
+  top: 58px;
+  left: 280px;
+  right: 0;
+  z-index: 90;
+  min-height: 47px;
+}
+
+.workspace.sidebar-collapsed .reading-toolbar {
+  left: 0;
+}
+
+.workspace:not(.sidebar-collapsed) {
+  --doc-max-width: 1400px;
+}
+
+.workspace.sidebar-collapsed {
+  --doc-max-width: none;
+}
+
+.workspace.sidebar-collapsed .doc {
+  max-width: calc(100% - 36px);
+}
+
+/* Reserve the fixed toolbar's vertical space in the document area. */
+.main {
+  padding-top: 47px;
+}
+
+@media (max-width: 900px) {
+  .reading-toolbar,
+  .workspace.sidebar-collapsed .reading-toolbar {
+    left: 0;
+    right: 0;
+  }
+
+  .workspace:not(.sidebar-collapsed),
+  .workspace.sidebar-collapsed {
+    --doc-max-width: none;
+  }
+}
+
+/* VS Code adaptation: keep the existing sidebar margin layout.
+   The workspace margin-left is intentionally controlled by the sidebar state
+   above so opening the TOC reduces the available document area instead of
+   overlaying the document. */
+.workspace:not(.sidebar-collapsed) { --doc-max-width: 1200px; }
+.workspace.sidebar-collapsed { --doc-max-width: 1200px; }

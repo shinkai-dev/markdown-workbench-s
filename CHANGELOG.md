@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0
+
+- Integrated the latest browser-version rendering and UI improvements into the VS Code extension.
+- Improved Markdown normalization and code block rendering.
+- Improved Mermaid rendering, zooming, panning, and fixed-frame behavior.
+- Added Mermaid diagram-only view in a separate VS Code editor tab for the selected diagram.
+- Improved sidebar default state and open/close behavior.
+- Adjusted the VS Code preview maximum width for a more compact workspace.
+- Improved Japanese and English UI localization.
+
+
 ## 1.1.1
 
 - Synced the latest browser viewer improvements, including Mermaid pan/zoom behavior and compact table controls.
