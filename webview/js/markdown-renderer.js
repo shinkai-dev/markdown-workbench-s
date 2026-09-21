@@ -6,6 +6,61 @@ window.MarkdownViewer = window.MarkdownViewer || {};
     return String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   }
 
+  // Normalize accidental indentation on Markdown structural lines.
+  // This intentionally targets headings and fenced code/Mermaid blocks only,
+  // so ordinary paragraph/list indentation is not changed. A fenced block
+  // may itself be indented; in that case the same indentation is removed
+  // from its fence and contents until the matching closing fence.
+  function normalizeIndentedMarkdown(source) {
+    var lines = normalizeNewlines(source).split('\n');
+    var out = [];
+    var fence = null;
+    var fenceIndent = 0;
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+
+      if (!fence) {
+        var fm = line.match(/^[ \t]*(`{3,}|~{3,})(.*)$/);
+        if (fm) {
+          fence = fm[1].charAt(0);
+          fenceIndent = (line.match(/^[ \t]*/) || [''])[0].length;
+          out.push(line.slice(fenceIndent));
+          continue;
+        }
+
+        // ATX headings are structural Markdown. Accept any accidental leading
+        // spaces so copied/indented documentation still renders as headings.
+        var hm = line.match(/^[ \t]+(#{1,10})[ \t]+(.*)$/);
+        if (hm) {
+          out.push(hm[1] + ' ' + hm[2]);
+          continue;
+        }
+
+        out.push(line);
+        continue;
+      }
+
+      var stripped = line;
+      var prefix = line.match(/^[ \t]*/);
+      var available = prefix ? prefix[0].length : 0;
+      var remove = Math.min(fenceIndent, available);
+      stripped = line.slice(remove);
+
+      // Closing fence: allow additional indentation, but normalize it to the
+      // same column as the opening fence.
+      var closeRe = new RegExp('^' + fence + '{3,}[ \t]*$');
+      if (closeRe.test(stripped)) {
+        out.push(stripped);
+        fence = null;
+        fenceIndent = 0;
+      } else {
+        out.push(stripped);
+      }
+    }
+    return out.join('\n');
+  }
+
   function escapeHtml(text) {
     return String(text == null ? '' : text)
       .replace(/&/g, '&amp;')
@@ -262,7 +317,8 @@ window.MarkdownViewer = window.MarkdownViewer || {};
     if (!window.marked) throw new Error('Markdownライブラリが読み込まれていません');
     if (!window.DOMPurify) throw new Error('サニタイズライブラリが読み込まれていません');
 
-    var extracted = extractMermaid(source);
+    var normalizedSource = normalizeIndentedMarkdown(source);
+    var extracted = extractMermaid(normalizedSource);
     var markdownForMarked = normalizeDeepHeadings(extracted.markdown);
     var html = marked.parse(markdownForMarked, {
       gfm: true,

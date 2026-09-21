@@ -8,7 +8,7 @@ function activate(context) {
 
   const openPreview = async (resource) => {
     const editor = vscode.window.activeTextEditor;
-    const uri = resource || (editor && editor.document.uri);
+    const uri = resource || (editor && editor.document.uri) || currentUri;
     if (!uri) {
       vscode.window.showInformationMessage('Open a Markdown file before running this command.');
       return;

@@ -632,13 +632,33 @@ a:focus-visible {
 .mermaid-canvas {
   overflow: auto;
   min-height: 80px;
-  padding: 18px;
-  text-align: center
+  padding: 0;
+  text-align: left;
+  cursor: grab;
+  user-select: none;
+  overscroll-behavior: contain;
+}
+
+.mermaid-canvas.is-panning {
+  cursor: grabbing;
+}
+
+.mermaid-stage {
+  position: relative;
+  min-width: 100%;
+  min-height: 160px;
+}
+
+.mermaid-svg-holder {
+  position: absolute;
+  transform-origin: top left;
+  will-change: transform, left, top;
 }
 
 .mermaid-canvas svg {
-  max-width: none;
-  height: auto
+  max-width: none !important;
+  height: auto;
+  display: block;
 }
 
 .mermaid-source {
@@ -1287,4 +1307,16 @@ a:focus-visible {
   --mv-code-operator: #ffffff;
   --mv-code-punctuation: #ffffff;
   --mv-code-meta: #ff79c6;
+}
+
+/* v1.1.1 final: sidebar state must be authoritative on desktop and mobile. */
+.sidebar { transition: transform .18s ease, opacity .18s ease; }
+@media(min-width:901px) {
+  .workspace.sidebar-collapsed { margin-left: 0 !important; }
+  .workspace.sidebar-collapsed .sidebar { transform: translateX(-105%) !important; visibility: hidden; pointer-events: none; }
+  .workspace:not(.sidebar-collapsed) .sidebar { transform: translateX(0) !important; visibility: visible; pointer-events: auto; }
+}
+@media(max-width:900px) {
+  .workspace.sidebar-collapsed .sidebar { transform: translateX(-105%) !important; visibility: hidden; pointer-events: none; }
+  .workspace:not(.sidebar-collapsed) .sidebar { transform: translateX(0) !important; visibility: visible; pointer-events: auto; }
 }
