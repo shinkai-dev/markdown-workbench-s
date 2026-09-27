@@ -591,7 +591,11 @@ a:focus-visible {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
-  overflow: hidden
+  overflow: hidden;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  position: relative;
 }
 
 .mermaid-toolbar {
@@ -634,16 +638,97 @@ a:focus-visible {
   min-width: 0;
   min-height: 220px;
   height: 360px;
-  max-width: 100%;
+  width: 100%;
+  max-width: none;
   padding: 0;
   position: relative;
-  resize: both;
+  resize: none;
   box-sizing: border-box;
   text-align: left;
   cursor: grab;
   user-select: none;
   overscroll-behavior: contain;
 }
+
+/* Mermaid frame resize handles: frame dimensions are independent from diagram zoom/pan. */
+.mermaid-resize-handle {
+  position: absolute;
+  z-index: 20;
+  user-select: none;
+  touch-action: none;
+  opacity: .7;
+  transition: opacity .12s ease, background-color .12s ease;
+}
+
+.mermaid-resize-handle:hover,
+.mermaid-canvas.is-resizing .mermaid-resize-handle {
+  opacity: 1;
+}
+
+.mermaid-resize-x {
+  top: 50%;
+  right: 0;
+  width: 22px;
+  height: 34px;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-right: 0;
+  border-radius: 5px 0 0 5px;
+  font-size: 12px;
+}
+
+.mermaid-resize-x::after { content: '↔'; }
+
+.mermaid-resize-y {
+  left: 50%;
+  bottom: -1px;
+  width: 34px;
+  height: 18px;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  font-size: 12px;
+}
+
+.mermaid-resize-y::after { content: '↕'; }
+
+.mermaid-resize-both {
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  height: 20px;
+  cursor: nwse-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px 0 0 0;
+  font-size: 12px;
+}
+
+.mermaid-resize-both::after { content: '↘'; }
+
+.mermaid-canvas.is-resizing,
+.mermaid-canvas.is-resizing * { cursor: inherit; }
+
+.mermaid-canvas.is-resizing .mermaid-resize-x { cursor: ew-resize; }
+.mermaid-canvas.is-resizing .mermaid-resize-y { cursor: ns-resize; }
+.mermaid-canvas.is-resizing .mermaid-resize-both { cursor: nwse-resize; }
 
 .mermaid-canvas.is-panning {
   cursor: grabbing;
@@ -1584,3 +1669,6 @@ a:focus-visible {
    overlaying the document. */
 .workspace:not(.sidebar-collapsed) { --doc-max-width: 1200px; }
 .workspace.sidebar-collapsed { --doc-max-width: 1200px; }
+
+/* v61: the visible Mermaid frame is the mermaid-block itself. Horizontal resizing changes the whole frame width, while the canvas keeps width:100%. */
+.mermaid-block.mv-mermaid-frame-sized { width: auto; }

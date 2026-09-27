@@ -2,6 +2,26 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 
+function prepareMarkdownForWebview(text, documentUri, webview) {
+  const source = String(text || '');
+  const documentDir = path.dirname(documentUri.fsPath);
+  const imageRe = /!\[([^\]]*)\]\(([^\s)]+)(?:\s+("[^\"]*"|'[^']*'))?\)/g;
+  return source.replace(imageRe, (full, alt, url, title) => {
+    const cleanUrl = String(url || '');
+    if (/^(?:https?:|data:image\/|vscode-webview-resource:)/i.test(cleanUrl)) {
+      return full;
+    }
+    try {
+      const decoded = cleanUrl.replace(/^<|>$/g, '');
+      const localPath = path.resolve(documentDir, decoded);
+      const resourceUri = webview.asWebviewUri(vscode.Uri.file(localPath)).toString();
+      return `![${alt}](${resourceUri}${title ? ` ${title}` : ''})`;
+    } catch (_) {
+      return full;
+    }
+  });
+}
+
 function activate(context) {
   let panel = null;
   let currentUri = null;
@@ -30,7 +50,11 @@ function activate(context) {
         {
           enableScripts: true,
           retainContextWhenHidden: true,
-          localResourceRoots: [vscode.Uri.file(path.join(context.extensionPath, 'webview'))]
+          localResourceRoots: [
+            vscode.Uri.file(path.join(context.extensionPath, 'webview')),
+            vscode.Uri.file(path.dirname(uri.fsPath)),
+            ...(vscode.workspace.workspaceFolders || []).map(folder => folder.uri)
+          ]
         }
       );
       panel.onDidDispose(() => {
@@ -62,7 +86,7 @@ function activate(context) {
       const doc = await vscode.workspace.openTextDocument(currentUri);
       await panel.webview.postMessage({
         type: 'document',
-        text: doc.getText(),
+        text: prepareMarkdownForWebview(doc.getText(), doc.uri, panel.webview),
         name: path.basename(doc.uri.fsPath),
         uri: doc.uri.toString()
       });
@@ -111,7 +135,7 @@ function activate(context) {
 
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(e => {
     if (currentUri && e.document.uri.toString() === currentUri.toString() && panel) {
-      panel.webview.postMessage({ type: 'document', text: e.document.getText(), name: path.basename(e.document.uri.fsPath), uri: e.document.uri.toString() });
+      panel.webview.postMessage({ type: 'document', text: prepareMarkdownForWebview(e.document.getText(), e.document.uri, panel.webview), name: path.basename(e.document.uri.fsPath), uri: e.document.uri.toString() });
     }
   }));
 
@@ -167,7 +191,7 @@ function getWebviewHtml(context, webview) {
     'js/toc-controller.js', 'js/search-controller.js', 'js/theme-controller.js', 'js/keyboard-controller.js', 'js/app.js'
   ];
   const scriptTags = scripts.map(p => `<script nonce="${nonce}" src="${asUri(p)}"></script>`).join('\n');
-  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; worker-src blob:; font-src ${webview.cspSource} data:;"><link rel="stylesheet" href="${asUri('css/app.css')}"><link rel="stylesheet" href="${asUri('css/themes.css')}"><style>body.vscode-webview .drop-overlay{display:none}.source-nav-hint{position:fixed;right:16px;bottom:16px;z-index:1000;padding:8px 12px;border:1px solid var(--border);background:var(--panel);border-radius:6px;opacity:0;pointer-events:none;transition:opacity .15s}body.source-nav-active .source-nav-hint{opacity:1}</style></head><body class="vscode-webview"><div id="app" aria-busy="false"></div><div id="toast" class="toast" role="status" aria-live="polite"></div><div class="source-nav-hint">Double-click to open the Markdown source</div><script nonce="${nonce}">window.addEventListener("error",function(e){var a=document.getElementById("app");if(a&&(!a.firstChild||a.textContent.trim()==="")){a.innerHTML="<div style=\"padding:32px;font-family:system-ui,sans-serif\"><h2>Markdown Workbench failed to start</h2><p>Webview error: "+String(e.message||"Unknown error")+"</p><p>Open the Developer Tools console for details.</p></div>";}});window.addEventListener("unhandledrejection",function(e){var a=document.getElementById("app");if(a&&(!a.firstChild||a.textContent.trim()==="")){a.innerHTML="<div style=\"padding:32px;font-family:system-ui,sans-serif\"><h2>Markdown Workbench failed to start</h2><p>Unhandled error: "+String(e.reason&&e.reason.message||e.reason||"Unknown error")+"</p></div>";}});</script>${scriptTags}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: http: data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; worker-src blob:; font-src ${webview.cspSource} data:;"><link rel="stylesheet" href="${asUri('css/app.css')}"><link rel="stylesheet" href="${asUri('css/themes.css')}"><style>body.vscode-webview .drop-overlay{display:none}.source-nav-hint{position:fixed;right:16px;bottom:16px;z-index:1000;padding:8px 12px;border:1px solid var(--border);background:var(--panel);border-radius:6px;opacity:0;pointer-events:none;transition:opacity .15s}body.source-nav-active .source-nav-hint{opacity:1}</style></head><body class="vscode-webview"><div id="app" aria-busy="false"></div><div id="toast" class="toast" role="status" aria-live="polite"></div><div class="source-nav-hint">Double-click to open the Markdown source</div><script nonce="${nonce}">window.addEventListener("error",function(e){var a=document.getElementById("app");if(a&&(!a.firstChild||a.textContent.trim()==="")){a.innerHTML="<div style=\"padding:32px;font-family:system-ui,sans-serif\"><h2>Markdown Workbench failed to start</h2><p>Webview error: "+String(e.message||"Unknown error")+"</p><p>Open the Developer Tools console for details.</p></div>";}});window.addEventListener("unhandledrejection",function(e){var a=document.getElementById("app");if(a&&(!a.firstChild||a.textContent.trim()==="")){a.innerHTML="<div style=\"padding:32px;font-family:system-ui,sans-serif\"><h2>Markdown Workbench failed to start</h2><p>Unhandled error: "+String(e.reason&&e.reason.message||e.reason||"Unknown error")+"</p></div>";}});</script>${scriptTags}</body></html>`;
 }
 
 function deactivate() {}

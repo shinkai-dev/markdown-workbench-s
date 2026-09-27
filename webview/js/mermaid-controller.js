@@ -110,6 +110,23 @@ window.MarkdownViewer = window.MarkdownViewer || {};
         svgHolder.innerHTML = result.svg;
         stage.appendChild(svgHolder);
         canvas.appendChild(stage);
+        // Custom frame resize handles. The frame size is independent from the
+        // diagram scale/position; do not use the native CSS resize control.
+        var resizeX = document.createElement('div');
+        resizeX.className = 'mermaid-resize-handle mermaid-resize-x';
+        resizeX.setAttribute('aria-label', 'Mermaid枠の横幅を変更');
+        resizeX.title = '横幅を変更';
+        var resizeY = document.createElement('div');
+        resizeY.className = 'mermaid-resize-handle mermaid-resize-y';
+        resizeY.setAttribute('aria-label', 'Mermaid枠の高さを変更');
+        resizeY.title = '高さを変更';
+        var resizeBoth = document.createElement('div');
+        resizeBoth.className = 'mermaid-resize-handle mermaid-resize-both';
+        resizeBoth.setAttribute('aria-label', 'Mermaid枠のサイズを変更');
+        resizeBoth.title = 'サイズを変更';
+        canvas.appendChild(resizeX);
+        canvas.appendChild(resizeY);
+        canvas.appendChild(resizeBoth);
         if (typeof result.bindFunctions === 'function') {
           result.bindFunctions(svgHolder);
         }
@@ -142,6 +159,11 @@ window.MarkdownViewer = window.MarkdownViewer || {};
             }
           }
 
+          // The Mermaid canvas is the resizable frame. Read its actual
+          // client size only; never derive or mutate the frame size from the
+          // diagram's scaled dimensions. This keeps horizontal and vertical
+          // resizing symmetric: shrinking the frame clips/pans the diagram
+          // instead of resizing the diagram itself.
           var frameWidth = canvas.clientWidth || 320;
           var frameHeight = canvas.clientHeight || DEFAULT_FRAME_HEIGHT;
 
@@ -297,6 +319,7 @@ window.MarkdownViewer = window.MarkdownViewer || {};
     block.dataset.bound = '1';
 
     var canvas = block.querySelector('.mermaid-canvas');
+    var activeResize = null;
     if (!pans.has(block)) {
       // Start with the diagram centered when it fits in the visible canvas.
       // This is calculated after the first SVG render as well, but keeping a
@@ -305,6 +328,26 @@ window.MarkdownViewer = window.MarkdownViewer || {};
     }
     canvas.addEventListener('pointerdown', function (event) {
       if (event.button !== 0) return;
+      var resizeHandle = event.target.closest && event.target.closest('.mermaid-resize-handle');
+      if (resizeHandle) {
+        var frame = canvas.parentElement || canvas;
+        var frameRect = frame.getBoundingClientRect();
+        var canvasRect = canvas.getBoundingClientRect();
+        activeResize = {
+          id: event.pointerId,
+          type: resizeHandle.classList.contains('mermaid-resize-both') ? 'both' :
+            (resizeHandle.classList.contains('mermaid-resize-x') ? 'x' : 'y'),
+          startX: event.clientX,
+          startY: event.clientY,
+          startWidth: frameRect.width,
+          startHeight: canvasRect.height
+        };
+        canvas.classList.add('is-resizing');
+        canvas.setPointerCapture(event.pointerId);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       var target = event.target;
       if (!target.closest || !target.closest('svg')) return;
       var pan = pans.get(block) || {x: 0, y: 0};
@@ -314,6 +357,25 @@ window.MarkdownViewer = window.MarkdownViewer || {};
       event.preventDefault();
     });
     canvas.addEventListener('pointermove', function (event) {
+      if (activeResize && activeResize.id === event.pointerId) {
+        var frame = canvas.parentElement;
+        var parentWidth = frame && frame.parentElement ? frame.parentElement.clientWidth : Infinity;
+        var minWidth = 240;
+        var minHeight = 220;
+        var width = activeResize.startWidth;
+        var height = activeResize.startHeight;
+        if (activeResize.type === 'x' || activeResize.type === 'both') {
+          width = Math.max(minWidth, Math.min(parentWidth || width, activeResize.startWidth + event.clientX - activeResize.startX));
+          if (frame) frame.style.width = width + 'px';
+        }
+        if (activeResize.type === 'y' || activeResize.type === 'both') {
+          height = Math.max(minHeight, activeResize.startHeight + event.clientY - activeResize.startY);
+          canvas.style.height = height + 'px';
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       var state = activePointers.get(block);
       if (!state || state.id !== event.pointerId) return;
       pans.set(block, {x: state.panX + event.clientX - state.startX, y: state.panY + event.clientY - state.startY});
@@ -357,12 +419,44 @@ window.MarkdownViewer = window.MarkdownViewer || {};
       event.preventDefault();
     });
     function endPan(event) {
+      if (activeResize && activeResize.id === event.pointerId) {
+        activeResize = null;
+        canvas.classList.remove('is-resizing');
+        try { canvas.releasePointerCapture(event.pointerId); } catch (_) {}
+        return;
+      }
       var state = activePointers.get(block);
       if (state && state.id === event.pointerId) activePointers.delete(block);
       canvas.classList.remove('is-panning');
     }
     canvas.addEventListener('pointerup', endPan);
     canvas.addEventListener('pointercancel', endPan);
+
+    // Re-layout the diagram when the frame is resized, but never write width/height
+    // back to the frame here. This prevents a horizontal shrink from being
+    // absorbed by diagram scaling or by the parent block.
+    if (typeof ResizeObserver === 'function') {
+      var frameObserver = new ResizeObserver(function () {
+        if (!initialized.has(block)) return;
+        var holder = block.querySelector('.mermaid-svg-holder');
+        var svg = holder && holder.querySelector('svg');
+        if (!holder || !svg) return;
+        var scale = scales.get(block) || 1;
+        var vb = (svg.getAttribute('viewBox') || '').trim().split(/[ ,]+/).map(Number);
+        var naturalWidth = vb.length === 4 && isFinite(vb[2]) && vb[2] > 0 ? vb[2] : (parseFloat(holder.style.width) || 1);
+        var naturalHeight = vb.length === 4 && isFinite(vb[3]) && vb[3] > 0 ? vb[3] : (parseFloat(holder.style.height) || 1);
+        var frameWidth = canvas.clientWidth || 320;
+        var frameHeight = canvas.clientHeight || DEFAULT_FRAME_HEIGHT;
+        var scaledWidth = naturalWidth * scale;
+        var fitsFrame = scaledWidth <= frameWidth + 1 && naturalHeight * scale <= frameHeight + 1;
+        var pan = pans.get(block) || {x: 0, y: 0};
+        var baseLeft = fitsFrame ? Math.max(0, (frameWidth - scaledWidth) / 2) : 0;
+        holder.style.left = (baseLeft + pan.x) + 'px';
+        holder.style.top = pan.y + 'px';
+      });
+      frameObserver.observe(canvas);
+      block._mermaidFrameObserver = frameObserver;
+    }
 
     var zoomSelect = block.querySelector('.mermaid-zoom-select');
     var zoomLevels = ZOOM_LEVELS.slice();

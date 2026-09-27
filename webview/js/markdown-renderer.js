@@ -61,6 +61,33 @@ window.MarkdownViewer = window.MarkdownViewer || {};
     return out.join('\n');
   }
 
+
+  // Protect Markdown image destinations from the inline emphasis pass in the
+  // bundled marked-compatible parser. URLs can legitimately contain `_`, `*`,
+  // and other Markdown-looking characters; those characters must remain part
+  // of the URL rather than being interpreted as emphasis syntax.
+  function protectImageUrls(source) {
+    var images = [];
+    var re = /!\[([^\]]*)\]\(([^\s)]+)(?:\s+(["\'][^"\']*["\']))?\)/g;
+    var markdown = String(source || '').replace(re, function (_, alt, url, title) {
+      var index = images.length;
+      images.push({ url: url, title: title || '' });
+      return '![' + alt + '](MVIMAGEURLTOKEN_' + index + ')';
+    });
+    return { markdown: markdown, images: images };
+  }
+
+  function restoreImageUrls(html, images) {
+    if (!images.length) return html;
+    return html.replace(/<img\b([^>]*?)\bsrc=["\']MVIMAGEURLTOKEN_(\d+)["\']([^>]*)>/gi, function (_, before, index, after) {
+      var item = images[Number(index)];
+      if (!item) return _;
+      var safeUrl = escapeHtml(item.url);
+      var title = item.title ? ' title="' + escapeHtml(item.title.slice(1, -1)) + '"' : '';
+      return '<img' + before + 'src="' + safeUrl + '"' + title + after + '>';
+    });
+  }
+
   function escapeHtml(text) {
     return String(text == null ? '' : text)
       .replace(/&/g, '&amp;')
@@ -314,7 +341,8 @@ window.MarkdownViewer = window.MarkdownViewer || {};
 
     var normalizedSource = normalizeIndentedMarkdown(source);
     var extracted = extractMermaid(normalizedSource);
-    var markdownForMarked = normalizeDeepHeadings(extracted.markdown);
+    var protectedImages = protectImageUrls(extracted.markdown);
+    var markdownForMarked = normalizeDeepHeadings(protectedImages.markdown);
     var html = marked.parse(markdownForMarked, {
       gfm: true,
       breaks: true,
@@ -333,6 +361,10 @@ window.MarkdownViewer = window.MarkdownViewer || {};
     html = html.replace(/<h6([^>]*)>\s*MV_HEADING_LEVEL_(7|8|9|10)_TOKEN\s*([\s\S]*?)<\/h6>/gi, function (_, attrs, level, body) {
       return '<h6' + attrs + ' data-heading-level="' + level + '" aria-level="' + level + '">' + body + '</h6>';
     });
+
+    // Restore image URLs only after sanitization. The URL values are escaped
+    // here, after marked can no longer interpret `_`, `*`, etc. as Markdown.
+    html = restoreImageUrls(html, protectedImages.images);
 
     // Only after sanitization do we insert our inert Mermaid placeholders.
     // The source is stored as textarea text, never as executable HTML.

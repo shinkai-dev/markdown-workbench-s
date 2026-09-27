@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1
+
+- Fixed Markdown image rendering for relative paths and URLs, including GIF images.
+- Fixed image URLs containing `_`, `*`, and other Markdown-significant characters being interpreted as Markdown syntax.
+- Integrated the Mermaid frame resize improvements from the browser version.
+- Mermaid frame width and height can now be resized independently without resizing the diagram itself.
+
 ## 1.2.0
 
 - Integrated the latest browser-version rendering and UI improvements into the VS Code extension.

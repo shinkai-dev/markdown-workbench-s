@@ -2,6 +2,20 @@
 
 Markdown Workbench S is a VS Code Markdown preview extension focused on **powerful table filtering and sorting**. It also provides Mermaid rendering, a table of contents, document search, code-block tools, themes, and double-click source navigation.
 
+## Demo
+
+### Interactive Table
+Sticky header, instant filtering, and column sorting in action.
+
+![Table Demo](https://raw.githubusercontent.com/shinkai-dev/cdn/main/vscode-extensions/markdown-workbench-s/markdown-table-en.gif)
+
+---
+
+### Interactive Mermaid Diagrams
+Resize, pan freely, or open Mermaid diagrams in a new tab for a detailed view.
+
+![Mermaid Demo](https://raw.githubusercontent.com/shinkai-dev/cdn/main/vscode-extensions/markdown-workbench-s/marmaid-en.gif)
+
 ## Highlights
 
 - **Table filtering** with per-column filters
