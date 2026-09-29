@@ -1,5 +1,6 @@
 window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
   M.vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+  if(M.vscode && document.body) document.body.classList.add('mv-preview-boot');
   var I18N = {
     ja: {settings:'表示設定', toc:'目次', openSidebar:'サイドバーを開く', searchToc:'目次を検索', open:'開く', notLoaded:'未読込', loading:'Markdownファイルを開くか、ここへドラッグ＆ドロップしてください', emptyTitle:'Markdown Viewer', emptyText:'Markdownファイルを開くか、ここへドラッグ＆ドロップしてください。', theme:'テーマ', system:'システム', light:'ライト', dark:'ダーク', contrast:'ハイコントラスト', fontSize:'文字サイズ', lineHeight:'行間', documentWidth:'本文幅', language:'言語', english:'English', japanese:'日本語', close:'閉じる', widthMinus:'本文−', widthPlus:'本文＋', empty:'Markdownドキュメントは空です。', rendering:'描画中…', renderError:'読み込み・描画エラー', failed:'処理に失敗しました', codeCopied:'コードをコピーしました', clipboardUnavailable:'クリップボードを利用できません', codeCopy:'コピー', codeWrap:'折り返し', codeCollapse:'折りたたみ', codeExpand:'展開', copyColumn:'列をコピー', tableFirstColumn:'先頭列固定', tableFirstRow:'先頭行固定', tableBoth:'両方固定', tableResetColumns:'列幅リセット', tableResetSize:'表サイズリセット', tableCopy:'コピー', tableCsv:'CSV', columnActions:'列の操作', filterColumn:'絞り込み', filterAllClear:'すべて解除', sortAscending:'昇順', sortDescending:'降順', sortClear:'並べ替え解除', filterTitle:'「{title}」を絞り込み', filterInput:'文字を入力', filterSpecial:'特殊条件', filterValues:'値', filterApply:'適用', filterReset:'解除', emptyValue:'空白', nonEmptyValue:'空白以外', filteringSummary:'{active}列で絞り込み中 · {shown} / {total} 行', tableFiltered:'表を絞り込みました', columnFilterCleared:'列の絞り込みを解除しました', allTableFiltersCleared:'表の絞り込みをすべて解除しました', sortCleared:'表の並べ替えを解除しました', sortedAscending:'昇順に並べ替えました', sortedDescending:'降順に並べ替えました', columnCopied:'列をコピーしました', tableCopied:'表をコピーしました', csvSaved:'CSVを保存しました', csvSaveFailed:'CSV保存に失敗しました', tableWidthChanged:'表の横幅を変更しました', tableSizeChanged:'表サイズを変更しました', columnWidthResize:'列幅を変更', mermaidZoom:'倍率', mermaidZoomOut:'縮小', mermaidZoomIn:'拡大', mermaidSource:'ソースも表示', mermaidOpen:'図だけ表示', popupBlocked:'新しいタブを開けませんでした。ポップアップを許可してください。', mermaidDiagram:'Mermaid図'},
     en: {settings:'Display Settings', toc:'Table of Contents', openSidebar:'Open sidebar', searchToc:'Search TOC', open:'Open', notLoaded:'Not loaded', loading:'Open a local Markdown file or drag and drop it here.', emptyTitle:'Markdown Viewer', emptyText:'Open a Markdown file or drag and drop it here.', theme:'Theme', system:'System', light:'Light', dark:'Dark', contrast:'High Contrast', fontSize:'Font size', lineHeight:'Line height', documentWidth:'Document width', language:'Language', english:'English', japanese:'Japanese', close:'Close', widthMinus:'Width −', widthPlus:'Width +', empty:'The Markdown document is empty.', rendering:'Rendering…', renderError:'Load/render error', failed:'Operation failed.', codeCopied:'Code copied.', clipboardUnavailable:'Clipboard is unavailable.', codeCopy:'Copy', codeWrap:'Wrap', codeCollapse:'Collapse', codeExpand:'Expand', copyColumn:'Copy column', tableFirstColumn:'Freeze first column', tableFirstRow:'Freeze header row', tableBoth:'Freeze both', tableResetColumns:'Reset column widths', tableResetSize:'Reset table size', tableCopy:'Copy', tableCsv:'CSV', columnActions:'Column actions', filterColumn:'Filter', filterAllClear:'Clear all', sortAscending:'Sort ascending', sortDescending:'Sort descending', sortClear:'Clear sort', filterTitle:'Filter “{title}”', filterInput:'Enter text', filterSpecial:'Special conditions', filterValues:'Values', filterApply:'Apply', filterReset:'Clear', emptyValue:'Blank', nonEmptyValue:'Non-blank', filteringSummary:'Filtering {active} column(s) · {shown} / {total} rows', tableFiltered:'Table filtered', columnFilterCleared:'Column filter cleared', allTableFiltersCleared:'All table filters cleared', sortCleared:'Sort cleared', sortedAscending:'Sorted ascending', sortedDescending:'Sorted descending', columnCopied:'Column copied', tableCopied:'Table copied', csvSaved:'CSV saved', csvSaveFailed:'Failed to save CSV', tableWidthChanged:'Table width changed', tableSizeChanged:'Table size changed', columnWidthResize:'Resize column width', mermaidZoom:'Zoom', mermaidZoomOut:'Zoom out', mermaidZoomIn:'Zoom in', mermaidSource:'Show source', mermaidOpen:'Open diagram', popupBlocked:'The new tab could not be opened. Please allow pop-ups.', mermaidDiagram:'Mermaid diagram'}
@@ -69,8 +70,32 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
      .replace(/<[^>]+>/g,'')
      .trim();
  }
- function sourceLineMatches(line, visible){
-   var a=normalizeVisibleText(stripMarkdownForMatch(line));
+ function prepareSourceLineCache(lines){
+   if(lines._mvMatchCache)return lines._mvMatchCache;
+   var normalized=new Array(lines.length);
+   var exact=Object.create(null);
+   for(var i=0;i<lines.length;i++){
+     var value=normalizeVisibleText(stripMarkdownForMatch(lines[i]));
+     normalized[i]=value;
+     if(value){
+       if(!exact[value]) exact[value]=[];
+       exact[value].push(i);
+     }
+   }
+   var cache={normalized:normalized,exact:exact};
+   try{Object.defineProperty(lines,'_mvMatchCache',{value:cache,configurable:true});}catch(ignore){lines._mvMatchCache=cache;}
+   return cache;
+ }
+ function firstIndexAtOrAfter(list, from){
+   var lo=0,hi=list.length;
+   while(lo<hi){
+     var mid=(lo+hi)>>1;
+     if(list[mid]<from)lo=mid+1;else hi=mid;
+   }
+   return lo<list.length?list[lo]:-1;
+ }
+ function sourceLineMatches(line, visible, cachedValue){
+   var a=cachedValue!==undefined?cachedValue:normalizeVisibleText(stripMarkdownForMatch(line));
    var b=normalizeVisibleText(visible);
    if(!a||!b)return false;
    return a===b || a.indexOf(b)===0 || b.indexOf(a)===0 || a.indexOf(b)>=0;
@@ -78,12 +103,30 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
  function findLineContaining(lines, anchor, from){
    var wanted=normalizeVisibleText(anchor);
    if(!wanted)return -1;
-   var limit=Math.min(lines.length, wanted.length>24 ? 120 : lines.length);
-   for(var i=Math.max(0,from||0);i<lines.length;i++){
-     if(sourceLineMatches(lines[i],anchor))return i;
-     var stripped=normalizeVisibleText(stripMarkdownForMatch(lines[i]));
-     if(stripped && wanted.length>=8 && (stripped.indexOf(wanted.slice(0,Math.min(48,wanted.length)))>=0 || wanted.indexOf(stripped)>=0))return i;
+   var start=Math.max(0,from||0);
+   var cache=prepareSourceLineCache(lines);
+   var exactList=cache.exact[wanted];
+   if(exactList){
+     var exactHit=firstIndexAtOrAfter(exactList,start);
+     if(exactHit>=0)return exactHit;
    }
+   // Most blocks are found near the current cursor. Keep the fast path bounded
+   // so a large document cannot make source-map construction quadratic merely
+   // because an anchor is slightly different from its Markdown source.
+   var nearEnd=Math.min(lines.length,start+(wanted.length>24?120:240));
+   var prefix=wanted.length>=8?wanted.slice(0,Math.min(48,wanted.length)):'';
+   for(var i=start;i<nearEnd;i++){
+     var stripped=cache.normalized[i];
+     if(!stripped)continue;
+     if(sourceLineMatches(null,anchor,stripped))return i;
+     if(prefix && (stripped.indexOf(prefix)>=0 || wanted.indexOf(stripped)>=0))return i;
+   }
+   // Do not fall back to a full-document scan here. That fallback made source
+   // map construction effectively quadratic on large documents when an anchor
+   // could not be matched by the normal path. Source blocks are processed in
+   // source order, so an exact cached match or a bounded nearby match is enough
+   // for normal Markdown. Keeping this path bounded prevents a large document
+   // from freezing the Webview before the double-click handler is installed.
    return -1;
  }
  function directListItemText(el){
@@ -188,7 +231,41 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
      map.push({line:hit.line+1,column:hit.column||1,endLine:hit.endLine!=null?hit.endLine+1:null});
      cursor=Math.max(cursor,hit.next||hit.line+1);
    });
-   return map;
+   return {lines:lines,map:map};
+ }
+ function buildSourceMapAsync(source,blocks,onProgress){
+   // Large Markdown documents can contain thousands of preview blocks. Building
+   // the source map synchronously makes the Webview main thread unresponsive
+   // and, in turn, delays registration of the double-click handler. Process the
+   // same mapping in small batches and yield to the browser between batches.
+   var lines=normalizeSourceText(source).split('\n');
+   var map=new Array(blocks.length);
+   var cursor=0, index=0;
+   var cache=prepareSourceLineCache(lines);
+   var BATCH=40;
+   return new Promise(function(resolve){
+     function step(){
+       var end=Math.min(blocks.length,index+BATCH);
+       for(;index<end;index++){
+         var el=blocks[index];
+         var hit=findSourceLocationForBlock(el,lines,cursor);
+         if(!hit){
+           map[index]=null;
+           continue;
+         }
+         map[index]={line:hit.line+1,column:hit.column||1,endLine:hit.endLine!=null?hit.endLine+1:null};
+         cursor=Math.max(cursor,hit.next||hit.line+1);
+       }
+       if(typeof onProgress==='function')onProgress(index,blocks.length);
+       if(index<blocks.length){
+         setTimeout(step,0);
+       }else{
+         resolve({lines:lines,map:map,cache:cache});
+       }
+     }
+     // Give the browser one paint opportunity before starting the first batch.
+     setTimeout(step,0);
+   });
  }
  function splitMarkdownTableCells(line){
    var text=String(line||'').trim();
@@ -216,25 +293,58 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
    var cells=splitMarkdownTableCells(line);
    return cells.length>=2 && cells.every(function(c){return /^:?-{3,}:?$/.test(c.replace(/\s/g,''))});
  }
+ function markdownTableHeaderCells(table){
+   var header=table&&table.tHead&&table.tHead.rows[0];
+   if(!header)return [];
+   return Array.prototype.map.call(header.cells,function(cell){
+     var clone=cell.cloneNode(true);
+     clone.querySelectorAll('.column-actions,.column-sort,.column-filter,.column-copy,.column-resizer').forEach(function(node){node.remove()});
+     return tableCellSourceText(clone.textContent||'');
+   });
+ }
+ function findMarkdownTableStart(lines,startLine,headerCells){
+   var start=Math.max(0,startLine||0);
+   for(var i=start;i<lines.length-1;i++){
+     if(!isMarkdownTableLine(lines[i]) || isMarkdownTableSeparator(lines[i]))continue;
+     if(!isMarkdownTableSeparator(lines[i+1]))continue;
+     var cells=splitMarkdownTableCells(lines[i]);
+     if(headerCells.length!==cells.length)continue;
+     var same=true;
+     for(var c=0;c<headerCells.length;c++){
+       if(tableCellSourceText(cells[c])!==headerCells[c]){same=false;break}
+     }
+     if(same)return i;
+   }
+   return -1;
+ }
  function mapTableCellTargets(tableBlock,lines,startLine){
    var table=tableBlock.querySelector('table');
-   if(!table)return;
+   if(!table)return null;
    var header=table.tHead&&table.tHead.rows[0];
    var body=table.tBodies&&table.tBodies[0];
    var rows=[];
    if(header) rows.push(header);
    if(body) Array.prototype.forEach.call(body.rows,function(r){rows.push(r)});
-   if(!rows.length)return;
-   var lineIndex=Math.max(0,startLine||0);
-   while(lineIndex<lines.length && !isMarkdownTableLine(lines[lineIndex])) lineIndex++;
-   if(lineIndex>=lines.length)return;
-   var sourceRow=0;
+   if(!rows.length)return null;
+
+   // Never locate a table by a generic text search. A common header such as
+   // "Name" or "Status" can appear in ordinary prose earlier in a large
+   // document and would shift every cell mapping to the wrong source row.
+   var headerCells=markdownTableHeaderCells(table);
+   var lineIndex=findMarkdownTableStart(lines,startLine,headerCells);
+   if(lineIndex<0)return null;
+   var tableStart=lineIndex;
+
    for(var r=0;r<rows.length;r++){
      var row=rows[r];
      if(!row.cells.length)continue;
-     while(lineIndex<lines.length && !isMarkdownTableLine(lines[lineIndex])) lineIndex++;
+     if(r===0){
+       // Header row is the line immediately before the separator.
+     }else{
+       lineIndex++;
+       while(lineIndex<lines.length && (!isMarkdownTableLine(lines[lineIndex]) || isMarkdownTableSeparator(lines[lineIndex])))lineIndex++;
+     }
      if(lineIndex>=lines.length)break;
-     if(isMarkdownTableSeparator(lines[lineIndex])){lineIndex++; if(lineIndex>=lines.length)break;}
      var cells=splitMarkdownTableCells(lines[lineIndex]);
      var used={};
      for(var c=0;c<row.cells.length;c++){
@@ -245,7 +355,7 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
          if(used[sc])continue;
          if(tableCellSourceText(cells[sc])===wanted){found=sc;break}
        }
-       if(found<0 && c<cells.length) found=c;
+       if(found<0 && c<cells.length)found=c;
        if(found>=0){
          used[found]=true;
          var rawLine=lines[lineIndex];
@@ -254,106 +364,324 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
          var col=1;
          if(needle){
            var pos=rawLine.indexOf(needle);
-           if(pos>=0) col=pos+1;
+           if(pos>=0)col=pos+1;
          }
+         row.setAttribute('data-source-line',String(lineIndex+1));
+         row.setAttribute('data-source-column',String(col));
          cell.setAttribute('data-source-line',String(lineIndex+1));
          cell.setAttribute('data-source-column',String(col));
        }
      }
-     lineIndex++;
-     sourceRow++;
    }
+   tableBlock.setAttribute('data-source-line',String(tableStart+1));
+   tableBlock.setAttribute('data-source-column','1');
+   return {line:tableStart,next:lineIndex+1};
  }
  function installSourceNavigation(source){
-   if(!M.vscode)return;
-   var doc=document.querySelector('.doc'); if(!doc)return;
-   // Use list items themselves as navigation targets. Mapping the parent UL/OL
-   // would make every nested item resolve to the first item in the list.
-   var blocks=Array.prototype.filter.call(doc.querySelectorAll('h1,h2,h3,h4,h5,h6,p,blockquote,li,pre,.code-wrap,.md-table-block,.mermaid-block,.mv-mermaid-placeholder'),function(el){
-     // A code wrapper owns its PRE, so map the wrapper only.
-     if(el.tagName==='PRE' && el.parentElement && el.parentElement.classList.contains('code-wrap')) return false;
-     return true;
-   });
-   var map=buildSourceMap(source,blocks);
-   var lines=normalizeSourceText(source).split('\n');
-   Array.prototype.forEach.call(blocks,function(el,idx){
-     var entry=map[idx];
-     if(entry){
-       el.setAttribute('data-source-line',String(entry.line));
-       el.setAttribute('data-source-column',String(entry.column||1));
-       if(entry.endLine!=null) el.setAttribute('data-source-end-line',String(entry.endLine));
-       else el.removeAttribute('data-source-end-line');
-     }else{
-       el.removeAttribute('data-source-end-line');
-       el.removeAttribute('data-source-line');
-       el.removeAttribute('data-source-column');
+   if(!M.vscode)return Promise.resolve();
+   var doc=document.querySelector('.doc'); if(!doc)return Promise.resolve();
+
+   var sourceText=normalizeSourceText(source);
+   var lines=sourceText.split('\n');
+   var lineCache=prepareSourceLineCache(lines);
+   var tableBlocks=Array.prototype.filter.call(
+     doc.querySelectorAll('.md-table-block'),
+     function(el){ return !!el; }
+   );
+   var resolving=false;
+
+   // Build an eager, collision-safe index for headings. Duplicate titles are
+   // resolved by heading level + normalized title + occurrence order.
+   var headingSourceIndex=Object.create(null);
+   for(var hi=0;hi<lines.length;hi++){
+     var hm=lines[hi].match(/^\s{0,3}(#{1,10})[ \t]+(.+?)[ \t]*#*[ \t]*$/);
+     if(!hm)continue;
+     var hkey=hm[1].length+'\u0000'+normalizeVisibleText(hm[2]);
+     if(!headingSourceIndex[hkey])headingSourceIndex[hkey]=[];
+     headingSourceIndex[hkey].push(hi+1);
+   }
+   var headingSeen=Object.create(null);
+   Array.prototype.forEach.call(doc.querySelectorAll('h1,h2,h3,h4,h5,h6'),function(heading){
+     var hlevel=Number(heading.getAttribute('data-heading-level')) || Number(heading.tagName.slice(1));
+     var hkey=hlevel+'\u0000'+normalizeVisibleText(heading.textContent||'');
+     var hocc=headingSeen[hkey]||0;
+     headingSeen[hkey]=hocc+1;
+     var hmatches=headingSourceIndex[hkey]||[];
+     if(hmatches[hocc]){
+       heading.setAttribute('data-source-line',String(hmatches[hocc]));
+       heading.setAttribute('data-source-column','1');
+       heading.setAttribute('data-source-end-line',String(hmatches[hocc]));
      }
    });
-   Array.prototype.forEach.call(doc.querySelectorAll('.md-table-block[data-source-line]'),function(tableBlock){
-     var tableLine=Number(tableBlock.getAttribute('data-source-line'))||1;
-     mapTableCellTargets(tableBlock,lines,tableLine-1);
+
+   // Code blocks also receive an eager source coordinate. This is especially
+   // important for four-space/tab-indented JavaScript/Python blocks because
+   // their rendered text no longer contains the Markdown indentation marker.
+   // Keep the mapping source-ordered so duplicate first code lines do not jump
+   // back to the first occurrence in a large document.
+   var codeCursor=0;
+   Array.prototype.forEach.call(doc.querySelectorAll('.code-wrap'),function(codeWrap){
+     var code=codeWrap.querySelector('code');
+     var codeLines=String(code ? code.textContent : '').split('\n').filter(function(x){return x.trim()});
+     if(!codeLines.length)return;
+     var firstCodeLine=normalizeVisibleText(codeLines[0]);
+     var hit=-1;
+     var cache=prepareSourceLineCache(lines);
+     var candidates=cache.exact[firstCodeLine]||[];
+     for(var ci=0;ci<candidates.length;ci++){
+       if(candidates[ci] < codeCursor)continue;
+       var candidateLine=String(lines[candidates[ci]]||'');
+       // A four-space/tab-indented block must really be an indented Markdown
+       // code line, not an unrelated prose line containing the same text.
+       if(/^(?:[ \t]{4,})(?!#)/.test(candidateLine)){
+         hit=candidates[ci];
+         break;
+       }
+       // Fenced code is also valid and may start without indentation.
+       if(/^\s*(?:```|~~~)/.test(candidateLine)){
+         hit=candidates[ci];
+         break;
+       }
+     }
+     if(hit<0){
+       var near=codeCursor;
+       while(near<lines.length){
+         var normalized=cache.normalized[near];
+         if(normalized===firstCodeLine && /^(?:[ \t]{4,})/.test(String(lines[near]||''))){hit=near;break;}
+         near++;
+       }
+     }
+     if(hit>=0){
+       var start=hit;
+       // For an indented code block, walk upward to its first contiguous code
+       // line so double-clicking any part of the block opens the block start.
+       while(start>codeCursor && /^(?:[ \t]{4,})/.test(String(lines[start-1]||'')) && String(lines[start-1]).trim()!=='') start--;
+       codeWrap.setAttribute('data-source-line',String(start+1));
+       codeWrap.setAttribute('data-source-column','1');
+       codeWrap.setAttribute('data-source-end-line',String(Math.max(start,hit)+1));
+       codeCursor=Math.max(codeCursor,hit+1);
+     }
    });
+
+   /*
+    * Source navigation is intentionally lazy for ordinary Markdown blocks.
+    * Building a source map for every paragraph/list item made large documents
+    * expensive and, more importantly, delayed the source mapping of tables.
+    *
+    * Tables are different: table filtering/sorting and cell double-click are
+    * core features, so only table blocks are mapped eagerly.  Ordinary
+    * headings/paragraphs/lists/code/Mermaid blocks are resolved only when the
+    * user double-clicks them.
+    */
+   function normalizedAnchorForElement(el){
+     if(!el)return '';
+     if(el.classList.contains('mermaid-block'))return String(el._mermaidSource||'').split('\n').filter(function(x){return x.trim()})[0]||'';
+     if(el.classList.contains('code-wrap') || el.tagName==='PRE'){
+       var code=el.querySelector('code');
+       return String(code ? code.textContent : '').split('\n').filter(function(x){return x.trim()})[0]||'';
+     }
+     if(el.tagName==='LI')return directListItemText(el);
+     if(el.tagName==='BLOCKQUOTE'){
+       var firstText=el.querySelector('p'); return firstText ? firstText.textContent : el.textContent;
+     }
+     return el.textContent||'';
+   }
+
+   function headingSourceInfo(el, anchor){
+     if(!el || !/^H[1-6]$/.test(el.tagName)) return null;
+     var level=Number(el.getAttribute('data-heading-level')) || Number(el.tagName.slice(1));
+     var wanted=normalizeVisibleText(anchor);
+     if(!wanted)return null;
+     var same=0;
+     var headings=doc.querySelectorAll('h1,h2,h3,h4,h5,h6');
+     for(var i=0;i<headings.length;i++){
+       var cur=headings[i];
+       var curLevel=Number(cur.getAttribute('data-heading-level')) || Number(cur.tagName.slice(1));
+       if(curLevel!==level)continue;
+       if(normalizeVisibleText(cur.textContent||'')!==wanted)continue;
+       if(cur===el)return {level:level, occurrence:same};
+       same++;
+     }
+     return null;
+   }
+
+   function findHeadingSourceLine(el, anchor){
+     var info=headingSourceInfo(el,anchor);
+     if(!info)return -1;
+     var seen=0;
+     var wanted=normalizeVisibleText(anchor);
+     for(var i=0;i<lines.length;i++){
+       var m=lines[i].match(/^\s{0,3}(#{1,10})[ \t]+(.+?)[ \t]*#*[ \t]*$/);
+       if(!m || m[1].length!==info.level)continue;
+       if(normalizeVisibleText(m[2])!==wanted)continue;
+       if(seen===info.occurrence)return i;
+       seen++;
+     }
+     return -1;
+   }
+
+   function sourceOccurrenceForElement(el, anchor){
+     var wanted=normalizeVisibleText(anchor);
+     if(!wanted)return 0;
+     var count=0;
+     var candidates=doc.querySelectorAll('h1,h2,h3,h4,h5,h6,p,blockquote,li,pre,.code-wrap,.mermaid-block,.mv-mermaid-placeholder');
+     for(var i=0;i<candidates.length;i++){
+       var cur=candidates[i];
+       if(cur===el)break;
+       if(/^H[1-6]$/.test(cur.tagName))continue;
+       if(cur.tagName==='PRE' && cur.parentElement && cur.parentElement.classList.contains('code-wrap'))continue;
+       if(normalizeVisibleText(normalizedAnchorForElement(cur))===wanted)count++;
+     }
+     return count;
+   }
+
+   function resolveElement(el){
+     if(!el)return null;
+     var existing=Number(el.getAttribute('data-source-line'))||0;
+     if(existing)return {
+       line:existing,
+       column:Number(el.getAttribute('data-source-column'))||1,
+       endLine:Number(el.getAttribute('data-source-end-line'))||existing
+     };
+
+     var anchor=normalizedAnchorForElement(el);
+     if(!anchor)return null;
+
+     var wanted=normalizeVisibleText(anchor);
+     var lineIndex=findHeadingSourceLine(el,anchor);
+     if(lineIndex<0){
+       var occurrence=sourceOccurrenceForElement(el,anchor);
+       var exact=lineCache.exact[wanted]||[];
+       lineIndex=exact.length ? (exact[Math.min(occurrence,exact.length-1)] != null ? exact[Math.min(occurrence,exact.length-1)] : -1) : -1;
+     }
+
+     // For headings, a failed heading-specific lookup must not fall back to a
+     // generic text search. Generic matching can jump to the first identical
+     // title elsewhere in a long document.
+     if(lineIndex<0 && /^H[1-6]$/.test(el.tagName))return null;
+
+     if(lineIndex<0){
+       lineIndex=findLineContaining(lines,anchor,0);
+     }
+
+     if(lineIndex<0)return null;
+
+     var hit=findSourceLocationForBlock(el,lines,lineIndex);
+     if(!hit)hit={line:lineIndex,column:1,next:lineIndex+1,endLine:lineIndex};
+
+     var result={
+       line:hit.line+1,
+       column:hit.column||1,
+       endLine:hit.endLine!=null ? hit.endLine+1 : null
+     };
+     el.setAttribute('data-source-line',String(result.line));
+     el.setAttribute('data-source-column',String(result.column));
+     if(result.endLine!=null)el.setAttribute('data-source-end-line',String(result.endLine));
+     return result;
+   }
+
    doc.ondblclick=function(e){
-     if(e.target.closest('button,input,textarea,select,a,.table-resize-handle,.table-right-resizer'))return;
-     var el=e.target.closest('[data-source-line]'); if(!el)return;
-     var line=Number(el.getAttribute('data-source-line'))||1;
+     var tableCell=e.target.closest && e.target.closest('.md-table-block td,.md-table-block th');
+     if(tableCell){
+       if(e.target.closest('button,input,textarea,select,.table-resize-handle,.table-right-resizer,.column-resizer'))return;
+     }else if(e.target.closest('button,input,textarea,select,a,.table-resize-handle,.table-right-resizer')){
+       return;
+     }
+
+     var el=tableCell || e.target.closest('[data-source-line]');
+     if(!el){
+       el=e.target.closest('h1,h2,h3,h4,h5,h6,p,blockquote,li,pre,.code-wrap,.mermaid-block,.mv-mermaid-placeholder');
+     }
+     if(!el || resolving)return;
+
+     /*
+      * Table cells already have exact source coordinates. Never replace that
+      * mapping with the generic lazy resolver.
+      */
+     var inTable=!!el.closest('.md-table-block');
+     var line=Number(el.getAttribute('data-source-line'))||0;
      var column=Number(el.getAttribute('data-source-column'))||1;
 
-     // Tables deliberately keep their existing cell-level source mapping.
-     // Do not alter this path: table filtering/sorting/double-click navigation
-     // has its own exact mapping and must remain untouched.
-     if(!el.classList.contains('md-table-block') && !el.closest('.md-table-block')){
+     // A table row keeps its source coordinate even after sorting/filtering.
+     // Use that row-level mapping as a recovery path if a cell attribute was
+     // lost by a DOM operation. This path is intentionally table-only so the
+     // ordinary lazy resolver is not reintroduced for large documents.
+     if(inTable && !line){
+       var mappedRow=el.closest('tr');
+       if(mappedRow){
+         line=Number(mappedRow.getAttribute('data-source-line'))||0;
+         column=Number(el.getAttribute('data-source-column'))||Number(mappedRow.getAttribute('data-source-column'))||1;
+       }
+     }
+
+     if(!line){
+       resolving=true;
+       var oldTitle=document.title;
+       try{
+         document.body.classList.add('source-resolving');
+         var result=resolveElement(el);
+         if(!result){
+           M.notify && M.notify('Markdownの位置を特定できませんでした');
+           return;
+         }
+         line=result.line;
+         column=result.column||1;
+       }catch(err){
+         try{console.warn('Markdown source navigation failed:',err);}catch(ignore){}
+         M.notify && M.notify('Markdownの位置を特定できませんでした');
+         return;
+       }finally{
+         resolving=false;
+         document.body.classList.remove('source-resolving');
+         document.title=oldTitle;
+       }
+     }
+
+     if(!inTable){
        var endLine=Number(el.getAttribute('data-source-end-line'))||line;
        if(endLine>line){
-         // marked with breaks=true emits <br> for source newlines inside a
-         // paragraph. Count only BRs before the clicked point within this
-         // block, including BRs nested inside inline elements.
-         var brCount=0;
-         // e.target is normally the enclosing <p> for plain text, so using
-         // it as the comparison node cannot tell which rendered line was
-         // double-clicked. Resolve the caret at the actual mouse position
-         // first, then count only the <br> elements before that caret.
-         var range=null;
-         try {
-           if(document.caretRangeFromPoint) {
-             range=document.caretRangeFromPoint(e.clientX,e.clientY);
-           } else if(document.caretPositionFromPoint) {
+         var brCount=0, range=null;
+         try{
+           if(document.caretRangeFromPoint) range=document.caretRangeFromPoint(e.clientX,e.clientY);
+           else if(document.caretPositionFromPoint){
              var cp=document.caretPositionFromPoint(e.clientX,e.clientY);
-             if(cp){
-               range=document.createRange();
-               range.setStart(cp.offsetNode,cp.offset);
-               range.collapse(true);
-             }
+             if(cp){range=document.createRange();range.setStart(cp.offsetNode,cp.offset);range.collapse(true);}
            }
-         } catch(ignore) {}
+         }catch(ignore2){}
          if(range && el.contains(range.startContainer)){
-           var walker=document.createTreeWalker(el,NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+           var walker=document.createTreeWalker(el,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT);
            var node;
            while((node=walker.nextNode())){
-             if(node===range.startContainer) break;
-             if(node.nodeType===Node.ELEMENT_NODE && node.tagName==='BR') brCount++;
+             if(node===range.startContainer)break;
+             if(node.nodeType===Node.ELEMENT_NODE && node.tagName==='BR')brCount++;
            }
-           // If the caret itself is immediately after a BR, the walker stops
-           // at the text node after it and the preceding BR has already been
-           // counted. For a caret directly inside the element, count BRs in
-           // preceding siblings as well.
            if(range.startContainer.nodeType===Node.ELEMENT_NODE){
              var child=range.startContainer.childNodes[range.startOffset-1];
-             if(child && child.nodeType===Node.ELEMENT_NODE && child.tagName==='BR') brCount++;
+             if(child && child.nodeType===Node.ELEMENT_NODE && child.tagName==='BR')brCount++;
            }
-         } else {
-           // Conservative fallback for browsers without caret APIs. This is
-           // deliberately restricted to paragraphs and never touches tables.
+         }else{
            var brs=el.querySelectorAll('br');
-           for(var bi=0;bi<brs.length;bi++){
-             if(brs[bi].getBoundingClientRect().top < e.clientY) brCount++;
-           }
+           for(var bi=0;bi<brs.length;bi++)if(brs[bi].getBoundingClientRect().top<e.clientY)brCount++;
          }
          line=Math.min(endLine,line+brCount);
        }
      }
-     M.vscode.postMessage({type:'openSource',line:line,column:column});
+     if(line>0)M.vscode.postMessage({type:'openSource',line:line,column:column});
    };
+
+   /*
+    * Eagerly map only tables. Keep the source cursor between tables so repeated
+    * header text still resolves to the correct table occurrence.
+    */
+   var tableCursor=0;
+   for(var ti=0;ti<tableBlocks.length;ti++){
+     var tableBlock=tableBlocks[ti];
+     var tableHit=mapTableCellTargets(tableBlock,lines,tableCursor);
+     if(!tableHit)continue;
+     tableCursor=Math.max(tableCursor,tableHit.next||tableHit.line+1);
+   }
+
+   return Promise.resolve();
  }
  function capturePreviewState(doc){
    var hasRenderedContent=!!(doc&&doc.querySelector('.md-table-block,.mermaid-block,.code-wrap,h1,h2,h3,h4,h5,h6,p,ul,ol,blockquote'));
@@ -366,6 +694,75 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
      sidebarOpen:M.settings.tocOpen===true
    };
  }
+ var previewRenderComplete=false;
+ var previewReadyTimer=0;
+ var previewResizeObserver=null;
+ var PREVIEW_MIN_WIDTH=520;
+ function showLoadingOverlay(){
+   var loading=document.querySelector('.loading');
+   if(!loading){
+     loading=document.createElement('div');
+     loading.className='loading';
+     loading.setAttribute('role','status');
+     loading.setAttribute('aria-live','polite');
+     loading.innerHTML='<div class="loading-card" aria-hidden="true"><span class="loading-dots"><span></span><span></span><span></span></span></div>';
+     document.body.appendChild(loading);
+   }
+   loading.hidden=false;
+   loading.setAttribute('aria-hidden','false');
+   document.body.classList.add('mv-rendering');
+   document.body.classList.remove('mv-preview-ready');
+   return loading;
+ }
+ function getPreviewWidth(){
+   var root=document.documentElement;
+   var body=document.body;
+   return Math.max(root ? root.clientWidth : 0, body ? body.clientWidth : 0, window.innerWidth || 0);
+ }
+ function stopPreviewReadyWait(){
+   if(previewReadyTimer){clearTimeout(previewReadyTimer);previewReadyTimer=0;}
+ }
+ function activatePreviewWhenSized(){
+   if(!M.vscode || !previewRenderComplete || document.visibilityState==='hidden')return;
+   stopPreviewReadyWait();
+   if(getPreviewWidth() < PREVIEW_MIN_WIDTH){
+     document.body.classList.remove('mv-preview-ready');
+     previewReadyTimer=setTimeout(activatePreviewWhenSized,80);
+     return;
+   }
+   requestAnimationFrame(function(){
+     requestAnimationFrame(function(){
+       if(!M.vscode || !previewRenderComplete || document.visibilityState==='hidden')return;
+       if(getPreviewWidth() < PREVIEW_MIN_WIDTH){activatePreviewWhenSized();return;}
+       document.body.classList.remove('mv-preview-boot');
+       document.body.classList.add('mv-preview-ready');
+       var loading=document.querySelector('.loading');
+       if(loading){loading.hidden=true;loading.setAttribute('aria-hidden','true');}
+       document.body.classList.remove('mv-rendering');
+     });
+   });
+ }
+ function markPreviewRenderComplete(){
+   previewRenderComplete=true;
+   activatePreviewWhenSized();
+ }
+ function hideLoadingOverlay(){
+   markPreviewRenderComplete();
+ }
+ function beginPreviewActivation(){
+   if(!M.vscode)return;
+   previewRenderComplete=false;
+   stopPreviewReadyWait();
+   document.body.classList.remove('mv-preview-ready');
+   showLoadingOverlay();
+ }
+ function installPreviewResizeObserver(){
+   if(!M.vscode || previewResizeObserver || typeof ResizeObserver==='undefined')return;
+   previewResizeObserver=new ResizeObserver(function(){
+     if(previewRenderComplete)activatePreviewWhenSized();
+   });
+   previewResizeObserver.observe(document.documentElement);
+ }
  function restorePreviewState(doc,state){
    if(!state)return;
    if(M.restoreTableStates)M.restoreTableStates(doc,state.tableStates||[]);
@@ -376,12 +773,91 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
    setTimeout(restoreScroll,60);
    setTimeout(restoreScroll,180);
  }
- async function loadText(text, name) { if (!text.trim()) { M.notify(M.t('empty')); return } var main = document.querySelector('.main'), doc = document.querySelector('.doc'); var previewState=capturePreviewState(doc); main.setAttribute('aria-busy', 'true'); var loading = document.createElement('div'); loading.className = 'loading'; loading.innerHTML = '<div>'+M.t('rendering')+'</div>'; document.body.appendChild(loading); try { doc.innerHTML = M.renderMarkdown(text); if (M.enhanceCodeBlocks) M.enhanceCodeBlocks(doc); document.querySelector('.filename').textContent = name; document.getElementById('status').textContent = text.length.toLocaleString() + '文字'; M.buildToc(doc); M.initTables(doc); installSourceNavigation(text); restorePreviewState(doc,previewState); M.renderMermaid(doc); M.refreshText(); document.querySelectorAll('.code-copy').forEach(function (b) { b.onclick = function () { M.copy(this.closest('.code-wrap').querySelector('code').innerText, M.t('codeCopied')) } }); document.querySelectorAll('.code-wrap-toggle').forEach(function (b) { b.onclick = function () { var w = this.closest('.code-wrap'); w.classList.toggle('wrap-lines'); this.setAttribute('aria-pressed', w.classList.contains('wrap-lines')) } }); document.querySelectorAll('.code-collapse').forEach(function (b) { b.onclick = function () { var w = this.closest('.code-wrap'); w.classList.toggle('is-collapsed'); this.setAttribute('aria-expanded', String(!w.classList.contains('is-collapsed'))) } }); if(!previewState)window.scrollTo(0, 0) } catch (e) { doc.innerHTML = '<div class="empty-card"><h2>読み込み・描画エラー</h2><p>' + String(e.message || e) + '</p></div>'; M.notify(M.t('failed')) } finally { loading.remove(); main.setAttribute('aria-busy', 'false') } } M.loadText = loadText; shell(); M.refreshText();
+ var renderSequence=0;
+ var activeRender=Promise.resolve();
+ var renderedDocumentUri=null;
+ async function loadText(text, name, documentUri) {
+   if(M.vscode) beginPreviewActivation();
+   var request=++renderSequence;
+   activeRender=activeRender.catch(function(){}).then(async function(){
+     if(request!==renderSequence)return;
+     if (!String(text||'').trim()) { M.notify(M.t('empty')); if(M.vscode) hideLoadingOverlay(); return; }
+     var main = document.querySelector('.main'), doc = document.querySelector('.doc');
+     if(!main||!doc)return;
+     var isSameDocument = !!(documentUri && renderedDocumentUri && documentUri === renderedDocumentUri);
+     var previewState=isSameDocument ? capturePreviewState(doc) : null;
+     main.setAttribute('aria-busy', 'true');
+     showLoadingOverlay();
+     try {
+       // Let the persistent full-screen curtain paint before the expensive
+       // Markdown/TOC/table work begins.
+       await new Promise(function(resolve){
+         if(window.requestAnimationFrame){
+           requestAnimationFrame(function(){requestAnimationFrame(resolve);});
+         } else setTimeout(resolve,32);
+       });
+       if(request!==renderSequence)return;
+       doc.innerHTML = M.renderMarkdown(text);
+       if (M.enhanceCodeBlocks) M.enhanceCodeBlocks(doc);
+       document.querySelector('.filename').textContent = name;
+       document.getElementById('status').textContent = text.length.toLocaleString() + '文字';
+       M.buildToc(doc);
+       M.initTables(doc);
+       installSourceNavigation(text);
+       restorePreviewState(doc,previewState);
+       if(request!==renderSequence)return;
+       await M.renderMermaid(doc);
+       if(request!==renderSequence)return;
+       M.refreshText();
+       document.querySelectorAll('.code-copy').forEach(function (b) { b.onclick = function () { M.copy(this.closest('.code-wrap').querySelector('code').innerText, M.t('codeCopied')) } });
+       document.querySelectorAll('.code-wrap-toggle').forEach(function (b) { b.onclick = function () { var w = this.closest('.code-wrap'); w.classList.toggle('wrap-lines'); this.setAttribute('aria-pressed', w.classList.contains('wrap-lines')) } });
+       document.querySelectorAll('.code-collapse').forEach(function (b) { b.onclick = function () { var w = this.closest('.code-wrap'); w.classList.toggle('is-collapsed'); this.setAttribute('aria-expanded', String(!w.classList.contains('is-collapsed'))) } });
+       if(!previewState)window.scrollTo(0, 0);
+       renderedDocumentUri=documentUri||null;
+     } catch (e) {
+       if(request===renderSequence){
+         doc.innerHTML = '<div class="empty-card"><h2>読み込み・描画エラー</h2><p>' + String(e.message || e) + '</p></div>';
+         M.notify(M.t('failed'));
+       }
+     } finally {
+       if(request===renderSequence){
+         hideLoadingOverlay();
+         main.setAttribute('aria-busy', 'false');
+       }
+     }
+   });
+   return activeRender;
+ } M.loadText = loadText; shell(); M.refreshText();
  if(M.vscode){
+   // The loading curtain is persistent in the DOM. Keeping it hidden/showing it
+   // with the Webview's own visibility lifecycle avoids a race where the retained
+   // old document gets one paint before a newly-created overlay can cover it.
+   document.addEventListener('visibilitychange',function(){
+     if(document.visibilityState==='hidden'){
+       stopPreviewReadyWait();
+       previewRenderComplete=false;
+       document.body.classList.remove('mv-preview-ready');
+       showLoadingOverlay();
+     }else{
+       beginPreviewActivation();
+       M.vscode.postMessage({type:'viewActivated'});
+     }
+   });
    window.addEventListener('message',function(e){
      var msg=e.data||{};
-     if(msg.type==='document') loadText(msg.text||'',msg.name||'Markdown');
+     if(msg.type==='prepareRender'){
+       showLoadingOverlay();
+       // Acknowledge only after the curtain has been applied. The extension
+       // waits for this acknowledgement before switching to the Markdown
+       // source tab, so the retained preview can never paint uncovered first.
+       if(M.vscode) M.vscode.postMessage({type:'renderPrepared',requestId:msg.requestId});
+       return;
+     }
+     if(msg.type==='renderReady'){ hideLoadingOverlay(); return; }
+     if(msg.type==='document') loadText(msg.text||'',msg.name||'Markdown',msg.uri||null);
    });
+   installPreviewResizeObserver();
+   showLoadingOverlay();
    M.vscode.postMessage({type:'ready'});
  } else {
    var fi = document.getElementById('file-input');

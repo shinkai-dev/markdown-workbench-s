@@ -6,7 +6,9 @@ function cleanCellText(cell){
 }
 function rowsForExport(tbody){return Array.from(tbody.rows).filter(function(r){return !r.hidden})}
 function tableTSV(table){
-  var rows=Array.from(table.rows);
+  var rows=[];
+  if(table.tHead&&table.tHead.rows[0]) rows.push(table.tHead.rows[0]);
+  if(table.tBodies[0]) rows=rows.concat(rowsForExport(table.tBodies[0]));
   return rows.map(function(r){return Array.from(r.cells).map(cleanCellText).join('\t')}).join('\n');
 }
 function columnTSV(table,index){
@@ -18,7 +20,10 @@ function columnTSV(table,index){
   return values.join('\n');
 }
 function csv(table){
-  return Array.from(table.rows).map(function(r){return Array.from(r.cells).map(function(c){return '"'+cleanCellText(c).replace(/"/g,'""')+'"'}).join(',')}).join('\r\n')
+  var rows=[];
+  if(table.tHead&&table.tHead.rows[0]) rows.push(table.tHead.rows[0]);
+  if(table.tBodies[0]) rows=rows.concat(rowsForExport(table.tBodies[0]));
+  return rows.map(function(r){return Array.from(r.cells).map(function(c){return '"'+cleanCellText(c).replace(/"/g,'""')+'"'}).join(',')}).join('\r\n')
 }
 function numericValue(v){var s=String(v||'').trim().replace(/,/g,'').replace(/%$/,'');if(!s)return null;if(/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(s)){var n=Number(s);return Number.isFinite(n)?n:null}return null}
 function compareValues(a,b){var na=numericValue(a),nb=numericValue(b);if(na!==null&&nb!==null)return na-nb;if(na!==null&&nb===null)return -1;if(na===null&&nb!==null)return 1;return String(a||'').localeCompare(String(b||''),'ja',{numeric:true,sensitivity:'base'})}
@@ -200,7 +205,7 @@ function init(block){
    syncColumnActionLayout();
  updateSortUI();
  var copy=block.querySelector('[data-action="copy-table"]');copy.addEventListener('click',function(){M.copy(tableTSV(table),M.t('tableCopied'))});
- block.querySelector('[data-action="export-csv"]').addEventListener('click',function(){try{var a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv(table)],{type:'text/csv;charset=utf-8'}));a.download='table.csv';a.click();setTimeout(function(){URL.revokeObjectURL(a.href)},500);M.notify(M.t('csvSaved'))}catch(e){M.notify(M.t('csvSaveFailed'))}});
+ block.querySelector('[data-action="export-csv"]').addEventListener('click',function(){try{var a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv(table)],{type:'text/csv;charset=utf-8'}));var d=new Date();var pad=function(n){return String(n).padStart(2,'0')};var stamp=d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds());a.download=stamp+'_table.csv';a.click();setTimeout(function(){URL.revokeObjectURL(a.href)},500);M.notify(M.t('csvSaved'))}catch(e){M.notify(M.t('csvSaveFailed'))}});
  var rightHandle=block.querySelector('.table-right-resizer'),handle=block.querySelector('.table-resize-handle'),sx,sy,sw,sh;
  rightHandle.addEventListener('pointerdown',function(ev){ev.preventDefault();rightHandle.setPointerCapture(ev.pointerId);sx=ev.clientX;sw=block.getBoundingClientRect().width;block.classList.add('table-sized');function mv(e){var maxW=block.parentElement.clientWidth;block.style.setProperty('--table-width',Math.min(maxW,Math.max(320,sw+e.clientX-sx))+'px')}function up(){rightHandle.removeEventListener('pointermove',mv);rightHandle.removeEventListener('pointerup',up);if(block._mvPersistState)block._mvPersistState();M.notify(M.t('tableWidthChanged'))}rightHandle.addEventListener('pointermove',mv);rightHandle.addEventListener('pointerup',up)});
  handle.addEventListener('pointerdown',function(ev){ev.preventDefault();handle.setPointerCapture(ev.pointerId);sx=ev.clientX;sy=ev.clientY;sw=block.getBoundingClientRect().width;sh=scroll.getBoundingClientRect().height;block.classList.add('table-sized');function mv(e){var parent=block.parentElement;var maxW=Math.max(320,parent.clientWidth);block.style.setProperty('--table-width',Math.min(maxW,Math.max(320,sw+e.clientX-sx))+'px');block.style.setProperty('--table-height',Math.min(window.innerHeight*.8,Math.max(160,sh+e.clientY-sy))+'px')}function up(){handle.removeEventListener('pointermove',mv);handle.removeEventListener('pointerup',up);if(block._mvPersistState)block._mvPersistState();M.notify(M.t('tableSizeChanged'))}handle.addEventListener('pointermove',mv);handle.addEventListener('pointerup',up)});

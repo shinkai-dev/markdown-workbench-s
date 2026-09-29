@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.3
+
+- Improved table cell double-click source navigation for filtered and sorted tables.
+- Preserved table row source coordinates so sorting/filtering does not change the original Markdown destination.
+- Added a table-row source mapping fallback when a cell-level mapping is unavailable.
+- Improved source navigation reliability for large Markdown documents by resolving ordinary Markdown locations lazily on double-click.
+- Prevented source-location lookup failures from breaking the rendered preview.
+- Avoided unnecessary full preview re-rendering when returning from the Markdown editor without document changes.
+- Updated the live preview only after Markdown content changes, with a short debounce during continuous editing.
+
 ## 1.2.2
 
 - Fixed Mermaid frames to follow the available VS Code preview width when resized.

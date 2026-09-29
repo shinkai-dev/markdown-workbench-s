@@ -352,15 +352,26 @@ window.MarkdownViewer = window.MarkdownViewer || {};
       if (!target.closest || !target.closest('svg')) return;
       var pan = pans.get(block) || {x: 0, y: 0};
       var holderForDrag = canvas.querySelector('.mermaid-svg-holder');
-      var holderRect = holderForDrag ? holderForDrag.getBoundingClientRect() : null;
+      if (!holderForDrag) return;
+      /*
+       * Store the holder's actual CSS position at pointerdown. Do not use
+       * getBoundingClientRect() as the movement origin: that rectangle already
+       * includes the SVG scale transform and can therefore introduce a visual
+       * offset when the diagram is zoomed. The CSS left/top values are in the
+       * same coordinate system as the pointer delta used below.
+       */
+      var startLeft = parseFloat(holderForDrag.style.left);
+      var startTop = parseFloat(holderForDrag.style.top);
+      if (!isFinite(startLeft)) startLeft = 0;
+      if (!isFinite(startTop)) startTop = 0;
       activePointers.set(block, {
         id: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
+        startLeft: startLeft,
+        startTop: startTop,
         panX: pan.x,
-        panY: pan.y,
-        grabOffsetX: holderRect ? event.clientX - holderRect.left : 0,
-        grabOffsetY: holderRect ? event.clientY - holderRect.top : 0
+        panY: pan.y
       });
       canvas.classList.add('is-panning');
       canvas.setPointerCapture(event.pointerId);
@@ -397,10 +408,13 @@ window.MarkdownViewer = window.MarkdownViewer || {};
       }
       var state = activePointers.get(block);
       if (!state || state.id !== event.pointerId) return;
-      // Move by the pointer delta so the exact point grabbed on the diagram
-      // stays under the pointer. The grab offset is retained as a reference
-      // for this gesture; no re-centering or scale change occurs while panning.
-      pans.set(block, {x: state.panX + event.clientX - state.startX, y: state.panY + event.clientY - state.startY});
+      // Move from the holder's exact CSS position captured at pointerdown.
+      // This preserves the exact point that was grabbed, including when the
+      // SVG is zoomed, and avoids re-centering the diagram during the gesture.
+      var deltaX = event.clientX - state.startX;
+      var deltaY = event.clientY - state.startY;
+      var desiredLeft = state.startLeft + deltaX;
+      var desiredTop = state.startTop + deltaY;
       var holder = canvas.querySelector('.mermaid-svg-holder');
       var stage = canvas.querySelector('.mermaid-stage');
       if (holder && stage) {
@@ -414,8 +428,11 @@ window.MarkdownViewer = window.MarkdownViewer || {};
         var frameHeight = canvas.clientHeight || stage.clientHeight || DEFAULT_FRAME_HEIGHT;
         var scaledWidth = naturalWidth * scale;
         var scaledHeight = naturalHeight * scale;
-        var baseLeft = (frameWidth - scaledWidth) / 2;
-        var baseTop = (frameHeight - scaledHeight) / 2;
+        // Match the initial layout exactly: horizontal centering only when
+        // the scaled diagram fits; vertical position starts at the top.
+        var fitsFrame = scaledWidth <= frameWidth + 1 && scaledHeight <= frameHeight + 1;
+        var baseLeft = fitsFrame ? Math.max(0, (frameWidth - scaledWidth) / 2) : 0;
+        var baseTop = 0;
 
         /*
          * Internal pan margin: the diagram can be moved beyond its centered
@@ -427,8 +444,10 @@ window.MarkdownViewer = window.MarkdownViewer || {};
         var maxPanX = PAN_MARGIN + Math.max(0, scaledWidth - frameWidth);
         var minPanY = -PAN_MARGIN - Math.max(0, scaledHeight - frameHeight);
         var maxPanY = PAN_MARGIN + Math.max(0, scaledHeight - frameHeight);
-        pan.x = Math.min(maxPanX, Math.max(minPanX, pan.x));
-        pan.y = Math.min(maxPanY, Math.max(minPanY, pan.y));
+        var desiredPanX = desiredLeft - baseLeft;
+        var desiredPanY = desiredTop - baseTop;
+        pan.x = Math.min(maxPanX, Math.max(minPanX, desiredPanX));
+        pan.y = Math.min(maxPanY, Math.max(minPanY, desiredPanY));
         pans.set(block, pan);
 
         /* Panning changes only the diagram position. Never resize the stage. */
@@ -533,14 +552,16 @@ window.MarkdownViewer = window.MarkdownViewer || {};
   };
 
   M.renderMermaid = function (root) {
-    if (!root) return;
+    if (!root) return Promise.resolve();
     mountPlaceholders(root);
     var blocks = root.querySelectorAll('.mermaid-block[data-mermaid-block="true"]');
+    var jobs = [];
     Array.prototype.forEach.call(blocks, function (block) {
       if (!scales.has(block)) scales.set(block, 1);
       bind(block);
-      draw(block);
+      jobs.push(draw(block));
     });
+    return Promise.all(jobs);
   };
 
   M.redrawMermaid = function () {
