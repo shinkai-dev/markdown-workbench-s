@@ -150,7 +150,27 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
    if(anchor){
      var firstVisible=String(anchor).split(/\n/).map(function(x){return x.trim()}).filter(Boolean)[0]||anchor;
      i=findLineContaining(lines,firstVisible,start);
-     if(i>=0)return {line:i,column:1,next:i+1};
+     if(i>=0){
+       // Paragraphs can contain multiple Markdown source lines but marked
+       // renders them as one <p> with <br> elements when breaks=true. Keep
+       // the complete source-line range on the block so a double-click can
+       // resolve the actual clicked line instead of always returning to the
+       // paragraph's first line.
+       if(el.tagName==='P'){
+         var end=i+1;
+         while(end<lines.length && String(lines[end]).trim()!=='' &&
+               !/^\s{0,3}(?:#{1,10})[ \t]+/.test(lines[end]) &&
+               !/^\s*[-+*]\s+/.test(lines[end]) &&
+               !/^\s*\d+[.)]\s+/.test(lines[end]) &&
+               !/^\s*```/.test(lines[end]) &&
+               !/^\s*~~~/.test(lines[end]) &&
+               !/^\s*\|/.test(lines[end])){
+           end++;
+         }
+         return {line:i,column:1,next:end+1,endLine:end};
+       }
+       return {line:i,column:1,next:i+1,endLine:i};
+     }
    }
    return null;
  }
@@ -165,7 +185,7 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
        map.push(null);
        return;
      }
-     map.push({line:hit.line+1,column:hit.column||1});
+     map.push({line:hit.line+1,column:hit.column||1,endLine:hit.endLine!=null?hit.endLine+1:null});
      cursor=Math.max(cursor,hit.next||hit.line+1);
    });
    return map;
@@ -261,7 +281,10 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
      if(entry){
        el.setAttribute('data-source-line',String(entry.line));
        el.setAttribute('data-source-column',String(entry.column||1));
+       if(entry.endLine!=null) el.setAttribute('data-source-end-line',String(entry.endLine));
+       else el.removeAttribute('data-source-end-line');
      }else{
+       el.removeAttribute('data-source-end-line');
        el.removeAttribute('data-source-line');
        el.removeAttribute('data-source-column');
      }
@@ -275,6 +298,60 @@ window.MarkdownViewer = window.MarkdownViewer || {}; (function (M) {
      var el=e.target.closest('[data-source-line]'); if(!el)return;
      var line=Number(el.getAttribute('data-source-line'))||1;
      var column=Number(el.getAttribute('data-source-column'))||1;
+
+     // Tables deliberately keep their existing cell-level source mapping.
+     // Do not alter this path: table filtering/sorting/double-click navigation
+     // has its own exact mapping and must remain untouched.
+     if(!el.classList.contains('md-table-block') && !el.closest('.md-table-block')){
+       var endLine=Number(el.getAttribute('data-source-end-line'))||line;
+       if(endLine>line){
+         // marked with breaks=true emits <br> for source newlines inside a
+         // paragraph. Count only BRs before the clicked point within this
+         // block, including BRs nested inside inline elements.
+         var brCount=0;
+         // e.target is normally the enclosing <p> for plain text, so using
+         // it as the comparison node cannot tell which rendered line was
+         // double-clicked. Resolve the caret at the actual mouse position
+         // first, then count only the <br> elements before that caret.
+         var range=null;
+         try {
+           if(document.caretRangeFromPoint) {
+             range=document.caretRangeFromPoint(e.clientX,e.clientY);
+           } else if(document.caretPositionFromPoint) {
+             var cp=document.caretPositionFromPoint(e.clientX,e.clientY);
+             if(cp){
+               range=document.createRange();
+               range.setStart(cp.offsetNode,cp.offset);
+               range.collapse(true);
+             }
+           }
+         } catch(ignore) {}
+         if(range && el.contains(range.startContainer)){
+           var walker=document.createTreeWalker(el,NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+           var node;
+           while((node=walker.nextNode())){
+             if(node===range.startContainer) break;
+             if(node.nodeType===Node.ELEMENT_NODE && node.tagName==='BR') brCount++;
+           }
+           // If the caret itself is immediately after a BR, the walker stops
+           // at the text node after it and the preceding BR has already been
+           // counted. For a caret directly inside the element, count BRs in
+           // preceding siblings as well.
+           if(range.startContainer.nodeType===Node.ELEMENT_NODE){
+             var child=range.startContainer.childNodes[range.startOffset-1];
+             if(child && child.nodeType===Node.ELEMENT_NODE && child.tagName==='BR') brCount++;
+           }
+         } else {
+           // Conservative fallback for browsers without caret APIs. This is
+           // deliberately restricted to paragraphs and never touches tables.
+           var brs=el.querySelectorAll('br');
+           for(var bi=0;bi<brs.length;bi++){
+             if(brs[bi].getBoundingClientRect().top < e.clientY) brCount++;
+           }
+         }
+         line=Math.min(endLine,line+brCount);
+       }
+     }
      M.vscode.postMessage({type:'openSource',line:line,column:column});
    };
  }
