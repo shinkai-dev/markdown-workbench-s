@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.4
+
+- Fixed sidebar navigation so selected headings are not hidden behind the fixed reading toolbar.
+- Added an offset between the selected heading and the fixed toolbar.
+- Improved Table of Contents navigation positioning while preserving smooth scrolling.
+
 ## 1.2.3
 
 - Improved table cell double-click source navigation for filtered and sorted tables.
