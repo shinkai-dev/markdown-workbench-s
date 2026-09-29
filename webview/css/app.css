@@ -1670,5 +1670,12 @@ a:focus-visible {
 .workspace:not(.sidebar-collapsed) { --doc-max-width: 1200px; }
 .workspace.sidebar-collapsed { --doc-max-width: 1200px; }
 
-/* v61: the visible Mermaid frame is the mermaid-block itself. Horizontal resizing changes the whole frame width, while the canvas keeps width:100%. */
-.mermaid-block.mv-mermaid-frame-sized { width: auto; }
+/* v61/v62: the visible Mermaid frame follows the viewport while retaining the user's resized width. */
+.mermaid-block.mv-mermaid-frame-sized {
+  width: var(--mv-mermaid-frame-width, 100%);
+  max-width: 100%;
+}
+
+.mermaid-block.mv-mermaid-frame-sized .mermaid-canvas {
+  width: 100%;
+}

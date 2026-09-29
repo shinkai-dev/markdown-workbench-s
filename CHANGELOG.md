@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.2
+
+- Fixed Mermaid frames to follow the available VS Code preview width when resized.
+- Fixed Mermaid drag positioning so the grabbed diagram moves consistently with the pointer.
+- Fixed Markdown source navigation after double-clicking the preview by aligning source mapping with top-level rendered blocks.
+- Synced Mermaid frame resize behavior with the browser version.
+
 ## 1.2.1
 
 - Fixed Markdown image rendering for relative paths and URLs, including GIF images.

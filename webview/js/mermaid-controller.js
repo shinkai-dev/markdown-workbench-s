@@ -351,7 +351,17 @@ window.MarkdownViewer = window.MarkdownViewer || {};
       var target = event.target;
       if (!target.closest || !target.closest('svg')) return;
       var pan = pans.get(block) || {x: 0, y: 0};
-      activePointers.set(block, {id: event.pointerId, startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y});
+      var holderForDrag = canvas.querySelector('.mermaid-svg-holder');
+      var holderRect = holderForDrag ? holderForDrag.getBoundingClientRect() : null;
+      activePointers.set(block, {
+        id: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        panX: pan.x,
+        panY: pan.y,
+        grabOffsetX: holderRect ? event.clientX - holderRect.left : 0,
+        grabOffsetY: holderRect ? event.clientY - holderRect.top : 0
+      });
       canvas.classList.add('is-panning');
       canvas.setPointerCapture(event.pointerId);
       event.preventDefault();
@@ -366,7 +376,16 @@ window.MarkdownViewer = window.MarkdownViewer || {};
         var height = activeResize.startHeight;
         if (activeResize.type === 'x' || activeResize.type === 'both') {
           width = Math.max(minWidth, Math.min(parentWidth || width, activeResize.startWidth + event.clientX - activeResize.startX));
-          if (frame) frame.style.width = width + 'px';
+          if (frame) {
+            // The visible frame itself is resized. Keep the explicit width so
+            // it can shrink with a narrow viewport via max-width:100%, and
+            // recover the user's chosen width when the viewport grows again.
+            frame.classList.add('mv-mermaid-frame-sized');
+            frame.style.width = width + 'px';
+            frame.style.setProperty('--mv-mermaid-frame-width', width + 'px');
+            frame.style.maxWidth = '100%';
+            frame.style.boxSizing = 'border-box';
+          }
         }
         if (activeResize.type === 'y' || activeResize.type === 'both') {
           height = Math.max(minHeight, activeResize.startHeight + event.clientY - activeResize.startY);
@@ -378,6 +397,9 @@ window.MarkdownViewer = window.MarkdownViewer || {};
       }
       var state = activePointers.get(block);
       if (!state || state.id !== event.pointerId) return;
+      // Move by the pointer delta so the exact point grabbed on the diagram
+      // stays under the pointer. The grab offset is retained as a reference
+      // for this gesture; no re-centering or scale change occurs while panning.
       pans.set(block, {x: state.panX + event.clientX - state.startX, y: state.panY + event.clientY - state.startY});
       var holder = canvas.querySelector('.mermaid-svg-holder');
       var stage = canvas.querySelector('.mermaid-stage');
@@ -432,9 +454,10 @@ window.MarkdownViewer = window.MarkdownViewer || {};
     canvas.addEventListener('pointerup', endPan);
     canvas.addEventListener('pointercancel', endPan);
 
-    // Re-layout the diagram when the frame is resized, but never write width/height
-    // back to the frame here. This prevents a horizontal shrink from being
-    // absorbed by diagram scaling or by the parent block.
+    // Native CSS resize changes the frame dimensions only. Re-layout the
+    // diagram when the frame is resized, but never write width/height back to
+    // the frame here. This prevents a horizontal shrink from being absorbed
+    // by diagram scaling or by the parent block.
     if (typeof ResizeObserver === 'function') {
       var frameObserver = new ResizeObserver(function () {
         if (!initialized.has(block)) return;
@@ -450,6 +473,7 @@ window.MarkdownViewer = window.MarkdownViewer || {};
         var scaledWidth = naturalWidth * scale;
         var fitsFrame = scaledWidth <= frameWidth + 1 && naturalHeight * scale <= frameHeight + 1;
         var pan = pans.get(block) || {x: 0, y: 0};
+        if (!pan) pan = {x: 0, y: 0};
         var baseLeft = fitsFrame ? Math.max(0, (frameWidth - scaledWidth) / 2) : 0;
         holder.style.left = (baseLeft + pan.x) + 'px';
         holder.style.top = pan.y + 'px';
