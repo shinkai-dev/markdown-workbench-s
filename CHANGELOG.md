@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.5
+
+- Updated the extension version to 1.2.5.
+- Simplified Preview tab titles to show the binoculars icon and file name without the colon separator.
+- Reformatted JavaScript source files for improved readability without changing their behavior.
+
+
 ## 1.2.4
 
 - Fixed sidebar navigation so selected headings are not hidden behind the fixed reading toolbar.
