@@ -1,112 +1,95 @@
 window.MarkdownViewer = window.MarkdownViewer || {
 };
 (function(M) {
-  var MERMAID_TOKEN_PREFIX = 'MVMERMAIDTOKEN_';
+  function escapeHtml(text) {
+    return String(text == null ? '' : text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');
+  }
   function normalizeNewlines(text) {
     return String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   }
-  // Normalize accidental indentation on Markdown structural lines.
-  // This intentionally targets headings and fenced code/Mermaid blocks only,
-  // so ordinary paragraph/list indentation is not changed. A fenced block
-  // may itself be indented; in that case the same indentation is removed
-  // from its fence and contents until the matching closing fence.
+  // Rendering must not rewrite ordinary Markdown source. Only line endings are normalized.
   function normalizeIndentedMarkdown(source) {
+    return normalizeNewlines(source);
+  }
+  function uniqueToken(source, prefix) {
+    var text = String(source || '');
+    var n = 0;
+    var token;
+    do {
+      token = prefix + n + '_TOKEN';
+      n++;
+    } while (text.indexOf(token) >= 0);
+    return token;
+  }
+  // Mermaid is extracted structurally so Mermaid syntax is never interpreted as Markdown.
+  function extractMermaid(source) {
     var lines = normalizeNewlines(source).split('\n');
-    var out =[];
+    var list = [];
+    var out = [];
+    var tokenPrefix = uniqueToken(source, 'MVMERMAIDTOKEN_');
+    var i = 0;
+    while (i < lines.length) {
+      var opening = lines[i].match(/^ {0,3}(`{3,}|~{3,})[ \t]*mermaid[ \t]*$/i);
+      if (!opening) {
+        out.push(lines[i]);
+        i++;
+        continue;
+      }
+      var start = i;
+      var fence = opening[1];
+      var ch = fence.charAt(0);
+      var min = fence.length;
+      var code = [];
+      i++;
+      var closed = false;
+      while (i < lines.length) {
+        var close = lines[i].match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+        if (close && close[1].charAt(0) === ch && close[1].length >= min) {
+          i++;
+          closed = true;
+          break;
+        }
+        code.push(lines[i]);
+        i++;
+      }
+      if (!closed) {
+        for (var ri = start; ri < lines.length; ri++) out.push(lines[ri]);
+        break;
+      }
+      var index = list.length;
+      list.push(code.join('\n'));
+      out.push(tokenPrefix + index);
+    }
+    return { markdown: out.join('\n'), mermaids: list, tokenPrefix: tokenPrefix };
+  }
+  function normalizeDeepHeadings(source) {
+    var lines = normalizeNewlines(source).split('\n');
+    var out = [];
     var fence = null;
-    var fenceIndent = 0;
+    var prefix = uniqueToken(source, 'MVHEADINGTOKEN_');
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
-      if ( ! fence) {
-        var fm = line.match(/^[ \t]*(`{3,}|~{3,})(.*)$/);
-        if (fm) {
-          fence = fm[1].charAt(0);
-          fenceIndent =(line.match(/^[ \t]*/) ||[''])[0].length;
-          out.push(line.slice(fenceIndent));
-          continue;
-        }
-        // ATX headings are structural Markdown. Accept any accidental leading
-        // spaces so copied/indented documentation still renders as headings.
-        var hm = line.match(/^[ \t]+(#{1,10})[ \t]+(.*)$/);
-        if (hm) {
-          out.push(hm[1] + ' ' + hm[2]);
-          continue;
-        }
+      if (fence) {
+        var close = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+        out.push(line);
+        if (close && close[1].charAt(0) === fence.charAt(0) && close[1].length >= fence.length) fence = null;
+        continue;
+      }
+      var fm = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      if (fm) {
+        fence = fm[1];
         out.push(line);
         continue;
       }
-      var stripped = line;
-      var prefix = line.match(/^[ \t]*/);
-      var available = prefix ? prefix[0].length: 0;
-      var remove = Math.min(fenceIndent, available);
-      stripped = line.slice(remove);
-      // Closing fence: allow additional indentation, but normalize it to the
-      // same column as the opening fence.
-      var closeRe = new RegExp('^' + fence + '{3,}[ \t]*$');
-      if (closeRe.test(stripped)) {
-        out.push(stripped);
-        fence = null;
-        fenceIndent = 0;
-      } else {
-        out.push(stripped);
+      var hm = line.match(/^( {0,3})(#{7,10})[ \t]+(.*)$/);
+      if (!hm) {
+        out.push(line);
+        continue;
       }
+      var level = hm[2].length;
+      out.push('###### ' + prefix + level + ' ' + hm[3]);
     }
-    return out.join('\n');
-  }
-  // Protect Markdown image destinations from the inline emphasis pass in the
-  // bundled marked-compatible parser. URLs can legitimately contain `_`, `*`,
-  // and other Markdown-looking characters; those characters must remain part
-  // of the URL rather than being interpreted as emphasis syntax.
-  function protectImageUrls(source) {
-    var images =[];
-    var re = /!\[([^\]]*)\]\(([^\s)]+)(?:\s+(["\'][^"\']*["\']))?\)/g;
-    var markdown = String(source || '').replace(re, function(_, alt, url, title) {
-      var index = images.length;
-      images.push({
-        url: url, title: title || ''
-      });
-      return '![' + alt + '](MVIMAGEURLTOKEN_' + index + ')';
-    });
-    return {
-      markdown: markdown, images: images
-    };
-  }
-  function restoreImageUrls(html, images) {
-    if ( ! images.length) return html;
-    return html.replace(/<img\b([^>]*?)\bsrc=["\']MVIMAGEURLTOKEN_(\d+)["\']([^>]*)>/gi, function(_, before, index, after) {
-      var item = images[Number(index)];
-      if ( ! item) return _;
-      var safeUrl = escapeHtml(item.url);
-      var title = item.title ? ' title="' + escapeHtml(item.title.slice(1, - 1)) + '"': '';
-      return '<img' + before + 'src="' + safeUrl + '"' + title + after + '>';
-    });
-  }
-  function escapeHtml(text) {
-    return String(text == null ? '': text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-  // Extract Mermaid BEFORE marked sees the source. We intentionally do not
-  // put Mermaid SVG/HTML through marked or DOMPurify.
-  function extractMermaid(source) {
-    var list =[];
-    var text = normalizeNewlines(source);
-    var re = /^```[ \t]*mermaid[ \t]*\n([\s\S]*?)\n```[ \t]*(?=\n|$)/gmi;
-    var replaced = text.replace(re, function(_, code) {
-      var index = list.length;
-      list.push(code.replace(/\n$/, ''));
-      return '\n' + MERMAID_TOKEN_PREFIX + index + '\n';
-    });
-    return {
-      markdown: replaced, mermaids: list
-    };
-  }
-  // Extend ATX-style headings to level 7-10. Standard Markdown/marked supports h1-h6;
-  // levels 7-10 are represented visually/semantically as h6 with an explicit
-  // aria-level marker so the TOC can still preserve the requested hierarchy.
-  function normalizeDeepHeadings(source) {
-    return normalizeNewlines(source).replace(/^(#{7,10})[ \t]+(.+)$/gm, function(_, hashes, text) {
-      var level = hashes.length;
-      return '###### MV_HEADING_LEVEL_' + level + '_TOKEN ' + text;
-    });
+    return { markdown: out.join('\n'), tokenPrefix: prefix };
   }
   function wrapTables(html) {
     html = html.replace(/<table>/g, '<table class="raw-md-table">');
@@ -307,9 +290,9 @@ window.MarkdownViewer = window.MarkdownViewer || {
       return '<div class="code-wrap" data-code-language="' + escapeHtml(safeLang) + '"><div class="code-head"><span class="code-lang">' + escapeHtml(safeLang) + '</span><span class="spacer"></span>' + '<button type="button" class="toolbar-btn code-copy">' + M.t('codeCopy') + '</button>' + '</div><pre><code class="language-' + escapeHtml(safeLang) + '">' + highlighted + '</code></pre></div>';
     });
   }
-  function injectMermaidPlaceholders(html, sources) {
+  function injectMermaidPlaceholders(html, sources, tokenPrefix) {
     for (var i = 0; i < sources.length; i++) {
-      var token = MERMAID_TOKEN_PREFIX + i;
+      var token = tokenPrefix + i;
       var placeholder = '<div class="mv-mermaid-placeholder" data-mermaid-index="' + i + '">' + '<textarea class="mv-mermaid-source-data" hidden>' + escapeHtml(sources[i]) + '</textarea>' + '</div>';
       var p = new RegExp('<p>\\s*' + token + '\\s*<\\/p>', 'g');
       var raw = new RegExp(token, 'g');
@@ -326,8 +309,8 @@ window.MarkdownViewer = window.MarkdownViewer || {
     if ( ! window.DOMPurify) throw new Error('サニタイズライブラリが読み込まれていません');
     var normalizedSource = normalizeIndentedMarkdown(source);
     var extracted = extractMermaid(normalizedSource);
-    var protectedImages = protectImageUrls(extracted.markdown);
-    var markdownForMarked = normalizeDeepHeadings(protectedImages.markdown);
+    var headingPrepared = normalizeDeepHeadings(extracted.markdown);
+    var markdownForMarked = headingPrepared.markdown;
     var html = marked.parse(markdownForMarked, {
       gfm: true, breaks: true, headerIds: true, mangle: false
     });
@@ -340,15 +323,14 @@ window.MarkdownViewer = window.MarkdownViewer || {
     // Promote h6 placeholders to logical levels 7-10 after sanitization.
     // Keeping a real h6 element preserves browser heading behavior while the
     // data attribute/aria-level carries the extended hierarchy.
-    html = html.replace(/<h6([^>]*)>\s*MV_HEADING_LEVEL_(7|8|9|10)_TOKEN\s*([\s\S]*?)<\/h6>/gi, function(_, attrs, level, body) {
+    var headingTokenPrefix = headingPrepared.tokenPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var headingTokenRe = new RegExp('<h6([^>]*)>\\s*' + headingTokenPrefix + '(7|8|9|10)\\s*([\\s\\S]*?)<\\/h6>', 'gi');
+    html = html.replace(headingTokenRe, function(_, attrs, level, body) {
       return '<h6' + attrs + ' data-heading-level="' + level + '" aria-level="' + level + '">' + body + '</h6>';
     });
-    // Restore image URLs only after sanitization. The URL values are escaped
-    // here, after marked can no longer interpret `_`, `*`, etc. as Markdown.
-    html = restoreImageUrls(html, protectedImages.images);
     // Only after sanitization do we insert our inert Mermaid placeholders.
     // The source is stored as textarea text, never as executable HTML.
-    html = injectMermaidPlaceholders(html, extracted.mermaids);
+    html = injectMermaidPlaceholders(html, extracted.mermaids, extracted.tokenPrefix);
     html = wrapCodeBlocks(html);
     html = wrapTables(html);
     return html;

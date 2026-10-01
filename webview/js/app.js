@@ -162,10 +162,203 @@ window.MarkdownViewer = window.MarkdownViewer || {
     return String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   }
   function normalizeVisibleText(text) {
-    return String(text || '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    var value = String(text || '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/\s+/g, ' ').trim();
+    try {
+      return value.normalize('NFC');
+    } catch (ignore) {
+      return value;
+    }
   }
   function stripMarkdownForMatch(text) {
-    return String(text || '').replace(/^\s{0,3}(?:#{1,10})\s+/, '').replace(/^\s*[-+*]\s+/, '').replace(/^\s*\d+[.)]\s+/, '').replace(/^\s*>\s?/, '').replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/`([^`]+)`/g, '$1').replace(/[*_~]/g, '').replace(/<[^>]+>/g, '').trim();
+    var value = String(text || '');
+    function isPunctuation(ch) {
+      return !!ch && /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(ch);
+    }
+    function escapedAt(source, index) {
+      var count = 0;
+      for (var p = index - 1; p >= 0 && source.charAt(p) === '\\'; p--) count++;
+      return (count % 2) === 1;
+    }
+    function findClosing(source, start, delimiter) {
+      var pos = start;
+      while ((pos = source.indexOf(delimiter, pos)) >= 0) {
+        if (!escapedAt(source, pos)) return pos;
+        pos += delimiter.length;
+      }
+      return -1;
+    }
+    function findEmphasisClosing(source, start, delimiter) {
+      var pos = start;
+      while ((pos = source.indexOf(delimiter, pos)) >= 0) {
+        if (!escapedAt(source, pos)) {
+          var prev = source.charAt(pos - 1), next = source.charAt(pos + delimiter.length);
+          if ((delimiter === '_' || delimiter === '__') && /[A-Za-z0-9_]/.test(prev) && /[A-Za-z0-9_]/.test(next)) {
+            pos += delimiter.length;
+            continue;
+          }
+          return pos;
+        }
+        pos += delimiter.length;
+      }
+      return -1;
+    }
+    function findDestinationEnd(source, openIndex) {
+      var depth = 0, quote = '';
+      for (var i = openIndex + 1; i < source.length; i++) {
+        var ch = source.charAt(i);
+        if (escapedAt(source, i)) continue;
+        if (quote) {
+          if (ch === quote) quote = '';
+          continue;
+        }
+        if (ch === '"' || ch === "'") {
+          quote = ch;
+          continue;
+        }
+        if (ch === '(') depth++;
+        else if (ch === ')') {
+          if (depth === 0) return i;
+          depth--;
+        }
+      }
+      return -1;
+    }
+    function findLabelEnd(source, start) {
+      var depth = 0;
+      for (var i = start; i < source.length; i++) {
+        if (escapedAt(source, i)) continue;
+        if (source.charAt(i) === '[') depth++;
+        else if (source.charAt(i) === ']') {
+          if (depth === 0) return i;
+          depth--;
+        }
+      }
+      return -1;
+    }
+    function inlineVisible(source) {
+      var out = '', i = 0;
+      while (i < source.length) {
+        var ch = source.charAt(i), pair = source.slice(i, i + 2), triple = source.slice(i, i + 3);
+        if (ch === '\\' && i + 1 < source.length) {
+          if (source.charAt(i + 1) === '\n') {
+            i += 2;
+            continue;
+          }
+          if (isPunctuation(source.charAt(i + 1))) {
+            out += source.charAt(i + 1);
+            i += 2;
+            continue;
+          }
+        }
+        if (ch === '`') {
+          var run = 1;
+          while (source.charAt(i + run) === '`') run++;
+          var fence = new Array(run + 1).join('`');
+          var codeEnd = findClosing(source, i + run, fence);
+          if (codeEnd >= 0) {
+            var code = source.slice(i + run, codeEnd).replace(/\r?\n/g, ' ');
+            if (code.length >= 2 && /^\s[\s\S]*\s$/.test(code) && !/^\s*$/.test(code)) code = code.slice(1, -1);
+            out += code;
+            i = codeEnd + run;
+            continue;
+          }
+        }
+        if (pair === '![' || ch === '[') {
+          var labelStart = i + (pair === '![' ? 2 : 1);
+          var labelEnd = findLabelEnd(source, labelStart);
+          if (labelEnd >= 0) {
+            var next = source.charAt(labelEnd + 1);
+            if (next === '(') {
+              var destEnd = findDestinationEnd(source, labelEnd + 1);
+              if (destEnd >= 0) {
+                out += inlineVisible(source.slice(labelStart, labelEnd));
+                i = destEnd + 1;
+                continue;
+              }
+            }
+            if (next === '[') {
+              var refEnd = findLabelEnd(source, labelEnd + 2);
+              if (refEnd >= 0) {
+                out += inlineVisible(source.slice(labelStart, labelEnd));
+                i = refEnd + 1;
+                continue;
+              }
+            }
+          }
+        }
+        if (ch === '<') {
+          var tagEnd = source.indexOf('>', i + 1);
+          if (tagEnd >= 0 && !escapedAt(source, tagEnd)) {
+            var inside = source.slice(i + 1, tagEnd);
+            // The renderer intentionally escapes raw HTML as text. Only Markdown
+            // autolinks are rendered without their angle brackets, so preserve
+            // HTML-looking text such as <script>...</script> for source matching.
+            if (/^https?:\/\//i.test(inside) || /^[^ <>@]+@[^ <>@]+\.[^ <>@]+$/.test(inside)) {
+              out += inside;
+              i = tagEnd + 1;
+              continue;
+            }
+          }
+        }
+        if (triple === '***' || triple === '___') {
+          var triplePrevious = source.charAt(i - 1);
+          var tripleNext = source.charAt(i + 3);
+          var tripleCanOpen = triple !== '___' || !(/[A-Za-z0-9_]/.test(triplePrevious) && /[A-Za-z0-9_]/.test(tripleNext));
+          if (tripleCanOpen) {
+            var tripleEnd = findClosing(source, i + 3, triple);
+            if (tripleEnd > i + 3) {
+              var tripleBeforeClose = source.charAt(tripleEnd - 1);
+              var tripleAfterClose = source.charAt(tripleEnd + 3);
+              var tripleCanClose = triple !== '___' || !(/[A-Za-z0-9_]/.test(tripleBeforeClose) && /[A-Za-z0-9_]/.test(tripleAfterClose));
+              if (tripleCanClose) {
+                out += inlineVisible(source.slice(i + 3, tripleEnd));
+                i = tripleEnd + 3;
+                continue;
+              }
+            }
+          }
+        }
+        var matched = false;
+        var emphasis = ['**', '__', '~~', '*', '_'];
+        for (var ei = 0; ei < emphasis.length; ei++) {
+          var delimiter = emphasis[ei];
+          if (source.slice(i, i + delimiter.length) !== delimiter) continue;
+          var previous = source.charAt(i - 1);
+          if ((delimiter === '_' || delimiter === '__') && /[A-Za-z0-9_]/.test(previous)) continue;
+          var end = findEmphasisClosing(source, i + delimiter.length, delimiter);
+          if (end <= i + delimiter.length) continue;
+          var after = source.charAt(end + delimiter.length);
+          if ((delimiter === '_' || delimiter === '__') && /[A-Za-z0-9_]/.test(after)) continue;
+          out += inlineVisible(source.slice(i + delimiter.length, end));
+          i = end + delimiter.length;
+          matched = true;
+          break;
+        }
+        if (matched) continue;
+        if (ch === '\n') {
+          out += ' ';
+          i++;
+          continue;
+        }
+        out += ch;
+        i++;
+      }
+      return out;
+    }
+    var heading = value.match(/^\s{0,3}(#{1,10})[ \t]+(.*)$/);
+    if (heading) value = heading[2].replace(/[ \t]+#+[ \t]*$/, '');
+    value = value.replace(/^\s*(?:[-+*][ \t]+|\d+[.)][ \t]+)/, '');
+    value = value.replace(/^\s*>[ \t]?/, '');
+    value = value.replace(/^\s*\[[ xX]\][ \t]+/, '');
+    var visible = inlineVisible(value).trim();
+    if (typeof document !== 'undefined' && document.createElement) {
+      try {
+        var decoder = document.createElement('textarea');
+        decoder.innerHTML = visible;
+        visible = decoder.value;
+      } catch (ignore) {}
+    }
+    return visible;
   }
   function prepareSourceLineCache(lines) {
     if (lines._mvMatchCache) return lines._mvMatchCache;
@@ -235,14 +428,29 @@ window.MarkdownViewer = window.MarkdownViewer || {
     // from freezing the Webview before the double-click handler is installed.
     return - 1;
   }
-  function directListItemText(el) {
-    var parts =[];
-    for (var i = 0; i < el.childNodes.length; i++) {
-      var n = el.childNodes[i];
-      if (n.nodeType === 3) parts.push(n.nodeValue || '');
-      else if (n.nodeType === 1 && n.tagName !== 'UL' && n.tagName !== 'OL') parts.push(n.textContent || '');
+  function directListItemText(el, firstLineOnly) {
+    function visibleNodeText(node) {
+      if (!node) return '';
+      if (node.nodeType === 3) return node.nodeValue || '';
+      if (node.nodeType !== 1) return '';
+      if (node.tagName === 'UL' || node.tagName === 'OL' || node.tagName === 'INPUT') return '';
+      if (node.tagName === 'BR') return '\n';
+      if (node.tagName === 'IMG') return node.getAttribute('alt') || '';
+      var out = '';
+      for (var j = 0; j < node.childNodes.length; j++) out += visibleNodeText(node.childNodes[j]);
+      return out;
     }
-    return parts.join(' ').replace(/\s+/g, ' ').trim();
+    var result = '';
+    for (var i = 0; i < el.childNodes.length; i++) {
+      var part = visibleNodeText(el.childNodes[i]);
+      if (firstLineOnly && part.indexOf('\n') >= 0) {
+        result += part.slice(0, part.indexOf('\n'));
+        break;
+      }
+      result += part;
+    }
+    if (firstLineOnly) result = result.split('\n')[0];
+    return result.replace(/\s+/g, ' ').trim();
   }
   function findSourceLocationForBlock(el, lines, from) {
     var start = Math.max(0, from || 0), i, anchor = '';
@@ -254,7 +462,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
       i = findLineContaining(lines, first, start);
       if (i >= 0) {
         for (var m = i; m >= start; m--) {
-          if (/^\s*```\s*mermaid\b/i.test(lines[m]) || /^\s*~~~\s*mermaid\b/i.test(lines[m])) {
+          if (/^\s*```[ \t]*mermaid\b/i.test(lines[m]) || /^\s*~~~[ \t]*mermaid\b/i.test(lines[m])) {
             i = m;
             break;
           }
@@ -404,27 +612,40 @@ window.MarkdownViewer = window.MarkdownViewer || {
       setTimeout(step, 0);
     });
   }
+  // Match the Markdown table parser: a raw pipe is a column delimiter unless
+  // it is escaped or inside a backtick code span. Emphasis/links/parentheses
+  // must not swallow table columns, otherwise source-cell mapping diverges from
+  // the rendered table (e.g. Item_A | Category#1 | `active_state` | 1,000).
   function splitMarkdownTableCells(line) {
     var text = String(line || '').trim();
     if (text.charAt(0) === '|') text = text.slice(1);
-    if (text.charAt(text.length - 1) === '|') text = text.slice(0, - 1);
-    var cells =[], buf = '', escaped = false;
+    if (text.charAt(text.length - 1) === '|' && text.charAt(text.length - 2) !== '\\') text = text.slice(0, -1);
+    var cells = [], buf = '', escaped = false, codeFenceLength = 0;
     for (var i = 0; i < text.length; i++) {
       var ch = text.charAt(i);
       if (escaped) {
         buf += ch;
         escaped = false;
-        continue
+        continue;
       }
       if (ch === '\\') {
         buf += ch;
         escaped = true;
-        continue
+        continue;
       }
-      if (ch === '|') {
+      if (ch === '`') {
+        var run = 1;
+        while (text.charAt(i + run) === '`') run++;
+        if (!codeFenceLength) codeFenceLength = run;
+        else if (run === codeFenceLength) codeFenceLength = 0;
+        buf += text.slice(i, i + run);
+        i += run - 1;
+        continue;
+      }
+      if (ch === '|' && !codeFenceLength) {
         cells.push(buf.trim());
         buf = '';
-        continue
+        continue;
       }
       buf += ch;
     }
@@ -519,12 +740,18 @@ window.MarkdownViewer = window.MarkdownViewer || {
         if (found >= 0) {
           used[found] = true;
           var rawLine = lines[lineIndex];
-          var rawCell = cells[found];
-          var needle = String(rawCell || '').trim();
           var col = 1;
-          if (needle) {
-            var pos = rawLine.indexOf(needle);
-            if (pos >= 0) col = pos + 1;
+          var searchFrom = 0;
+          for (var pc = 0; pc <= found; pc++) {
+            var part = String(cells[pc] || '').trim();
+            if (!part) continue;
+            var partPos = rawLine.indexOf(part, searchFrom);
+            if (partPos < 0) break;
+            if (pc === found) {
+              col = partPos + 1;
+              break;
+            }
+            searchFrom = partPos + part.length;
           }
           row.setAttribute('data-source-line', String(lineIndex + 1));
           row.setAttribute('data-source-column', String(col));
@@ -594,15 +821,24 @@ window.MarkdownViewer = window.MarkdownViewer || {
         var candidateLine = String(lines[candidates[ci]] || '');
         // A four-space/tab-indented block must really be an indented Markdown
         // code line, not an unrelated prose line containing the same text.
-        if (/^(?:[ \t]{4,})(?!#)/.test(candidateLine)) {
+        if (/^(?:[ \t]{4,})/.test(candidateLine)) {
           hit = candidates[ci];
           break;
         }
-        // Fenced code is also valid and may start without indentation.
-        if (/^\s*(?:```|~~~)/.test(candidateLine)) {
-          hit = candidates[ci];
-          break;
+        // Fenced code is also valid and its first code line is usually not the fence itself.
+        var fenceStart = candidates[ci];
+        while (fenceStart >= 0) {
+          if (/^\s*(?:`{3,}|~{3,})/.test(String(lines[fenceStart] || ''))) {
+            hit = candidates[ci];
+            break;
+          }
+          if (String(lines[fenceStart] || '').trim() === '') {
+            fenceStart--;
+            continue;
+          }
+          fenceStart--;
         }
+        if (hit >= 0) break;
       }
       if (hit < 0) {
         var near = codeCursor;
@@ -647,12 +883,39 @@ window.MarkdownViewer = window.MarkdownViewer || {
           return x.trim()
         })[0] || '';
       }
-      if (el.tagName === 'LI') return directListItemText(el);
+      if (el.tagName === 'LI') return directListItemText(el, true);
       if (el.tagName === 'BLOCKQUOTE') {
         var firstText = el.querySelector('p');
         return firstText ? firstText.textContent: el.textContent;
       }
       return el.textContent || '';
+    }
+    function findListItemSourceLine(el, anchor) {
+      if (!el || el.tagName !== 'LI') return -1;
+      var wanted = normalizeVisibleText(directListItemText(el, true));
+      if (!wanted) return -1;
+
+      // Resolve list items against list-item source lines only. The generic
+      // occurrence resolver also counts paragraphs/headings with the same
+      // visible text, which can select the wrong occurrence when a document
+      // contains repeated list labels or nested lists.
+      var renderedOccurrence = 0;
+      var items = doc.querySelectorAll('li');
+      for (var ri = 0; ri < items.length; ri++) {
+        var item = items[ri];
+        if (normalizeVisibleText(directListItemText(item, true)) !== wanted) continue;
+        if (item === el) break;
+        renderedOccurrence++;
+      }
+
+      var candidates = [];
+      for (var i = 0; i < lines.length; i++) {
+        var line = String(lines[i] || '');
+        // Match unordered and ordered list markers at any valid indentation.
+        if (!/^\s*(?:[-+*]\s+|\d+[.)]\s+)/.test(line)) continue;
+        if (normalizeVisibleText(stripMarkdownForMatch(line)) === wanted) candidates.push(i);
+      }
+      return candidates[renderedOccurrence] != null ? candidates[renderedOccurrence] : -1;
     }
     function headingSourceInfo(el, anchor) {
       if ( ! el || ! /^H[1-6]$/.test(el.tagName)) return null;
@@ -675,18 +938,29 @@ window.MarkdownViewer = window.MarkdownViewer || {
     }
     function findHeadingSourceLine(el, anchor) {
       var info = headingSourceInfo(el, anchor);
-      if ( ! info) return - 1;
+      if ( ! info) return -1;
       var seen = 0;
       var wanted = normalizeVisibleText(anchor);
       for (var i = 0; i < lines.length; i++) {
-        var m = lines[i].match(/^\s{0,3}(#{1,10})[ \t]+(.+?)[ \t]*#*[ \t]*$/);
-        if ( ! m || m[1].length !== info.level) continue;
-        if (normalizeVisibleText(m[2]) !== wanted) continue;
-        if (seen === info.occurrence) return i;
-        seen++;
+        var line = String(lines[i] || '');
+        var m = line.match(/^\s{0,3}(#{1,10})[ \t]+(.+?)(?:[ \t]+#+[ \t]*)?$/);
+        if (m && m[1].length === info.level) {
+          if (normalizeVisibleText(m[2]) !== wanted) continue;
+          if (seen === info.occurrence) return i;
+          seen++;
+          continue;
+        }
+        if (info.level <= 2 && i + 1 < lines.length && line.trim() && /^(?: {0,3}=+| {0,3}-+)[ \t]*$/.test(String(lines[i + 1] || ''))) {
+          var setextLevel = String(lines[i + 1]).trim().charAt(0) === '=' ? 1 : 2;
+          if (setextLevel !== info.level) continue;
+          if (normalizeVisibleText(line.trim()) !== wanted) continue;
+          if (seen === info.occurrence) return i;
+          seen++;
+        }
       }
-      return - 1;
+      return -1;
     }
+
     function sourceOccurrenceForElement(el, anchor) {
       var wanted = normalizeVisibleText(anchor);
       if ( ! wanted) return 0;
@@ -711,6 +985,9 @@ window.MarkdownViewer = window.MarkdownViewer || {
       if ( ! anchor) return null;
       var wanted = normalizeVisibleText(anchor);
       var lineIndex = findHeadingSourceLine(el, anchor);
+      if (lineIndex < 0 && el.tagName === 'LI') {
+        lineIndex = findListItemSourceLine(el, anchor);
+      }
       if (lineIndex < 0) {
         var occurrence = sourceOccurrenceForElement(el, anchor);
         var exact = lineCache.exact[wanted] ||[];

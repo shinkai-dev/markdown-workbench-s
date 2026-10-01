@@ -1569,7 +1569,58 @@ body.vscode-webview:not(.mv-preview-ready) #app {
   right: -5px;
   width: 10px;
 }
-\n\n/* v36: deterministic per-column action layout.\n   The resize handle belongs strictly to its own TH so neighbouring handles\n   cannot steal pointer events. The column's <col> width is the only trigger\n   for switching the action group to vertical. */\n.table-scroll th .column-resizer {\n  right: 0;\n  top: 0;\n  width: 7px;\n  height: 100%;\n  z-index: 10;\n}\n\n.table-scroll th.mv-column-vertical {\n  width: auto;\n  min-width: 0;\n}\n\n.table-scroll th.mv-column-vertical .column-title {\n  display: block;\n  width: 100%;\n  padding-right: 0;\n}\n\n.table-scroll th.mv-column-vertical .column-actions {\n  position: relative;\n  top: auto;\n  right: auto;\n  width: 20px;\n  margin: 5px auto 0;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 2px;\n  border-top: 1px solid var(--border);\n  padding-top: 4px;\n}\n\n.table-scroll th.mv-column-vertical .column-actions button {\n  width: 20px;\n  min-width: 20px;\n  height: 19px;\n  flex: 0 0 19px;\n}\n\n/* Do not let action controls or the label capture the resize strip. */\n.table-scroll th .column-actions,\n.table-scroll th .column-title {\n  pointer-events: auto;\n}\n
+
+
+/* v36: deterministic per-column action layout.
+   The resize handle belongs strictly to its own TH so neighbouring handles
+   cannot steal pointer events. The column's <col> width is the only trigger
+   for switching the action group to vertical. */
+.table-scroll th .column-resizer {
+  right: 0;
+  top: 0;
+  width: 7px;
+  height: 100%;
+  z-index: 10;
+}
+
+.table-scroll th.mv-column-vertical {
+  width: auto;
+  min-width: 0;
+}
+
+.table-scroll th.mv-column-vertical .column-title {
+  display: block;
+  width: 100%;
+  padding-right: 0;
+}
+
+.table-scroll th.mv-column-vertical .column-actions {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 20px;
+  margin: 5px auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.table-scroll th.mv-column-vertical .column-actions button {
+  width: 20px;
+  min-width: 20px;
+  height: 19px;
+  flex: 0 0 19px;
+}
+
+/* Do not let action controls or the label capture the resize strip. */
+.table-scroll th .column-actions,
+.table-scroll th .column-title {
+  pointer-events: auto;
+}
+
 /* v45: stable collapsible table-of-contents sidebar */
 .sidebar-head {
   position: relative;
@@ -1735,3 +1786,11 @@ body.vscode-webview:not(.mv-preview-ready) #app {
 .mermaid-block.mv-mermaid-frame-sized .mermaid-canvas {
   width: 100%;
 }
+
+/* Preserve GFM table column alignment from the Markdown separator row. */
+.table-scroll th.mv-table-align-left,
+.table-scroll td.mv-table-align-left { text-align: left; }
+.table-scroll th.mv-table-align-center,
+.table-scroll td.mv-table-align-center { text-align: center; }
+.table-scroll th.mv-table-align-right,
+.table-scroll td.mv-table-align-right { text-align: right; }

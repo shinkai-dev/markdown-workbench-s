@@ -2,9 +2,15 @@
 
 ## 1.2.5
 
-- Updated the extension version to 1.2.5.
 - Simplified Preview tab titles to show the binoculars icon and file name without the colon separator.
 - Reformatted JavaScript source files for improved readability without changing their behavior.
+- Fixed the initial Preview loading sequence so the first document is rendered after the Webview is ready.
+- Fixed Markdown rendering and source navigation for list items, including nested, repeated, ordered, and inline-formatted list content.
+- Preserved Markdown characters such as underscores, backticks, URLs, and code content during rendering and source matching.
+- Improved fenced/indented code handling, nested link/image parsing, and table cell parsing for embedded pipes and alignment.
+- Further hardened Markdown rendering for task lists, escaped literals, intraword underscores, raw HTML text, code highlighting, and table action styling.
+- Fixed GFM table column splitting when cells contain underscores, emphasis, links, escaped pipes, or inline code, while preserving source-cell mapping.
+- Fixed a nested-emphasis parsing regression and source matching for literal triple underscores and raw HTML text.
 
 
 ## 1.2.4

@@ -2,32 +2,192 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 function prepareMarkdownForWebview(text, documentUri, webview) {
-  const source = String(text || '');
+  const source = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const documentDir = path.dirname(documentUri.fsPath);
-  const imageRe = /!\[([^\]]*)\]\(([^\s)]+)(?:\s+("[^\"]*"|'[^']*'))?\)/g;
-  return source.replace(imageRe, (full, alt, url, title) => {
-    const cleanUrl = String(url || '');
-    if (/^(?:https?:|data:image\/|vscode-webview-resource:)/i.test(cleanUrl)) {
-      return full;
+  const lines = source.split('\n');
+  let fenceChar = '';
+  let fenceLength = 0;
+
+  function isEscaped(value, index) {
+    let count = 0;
+    for (let i = index - 1; i >= 0 && value.charAt(i) === '\\'; i--) count++;
+    return (count % 2) === 1;
+  }
+
+  function findUnescaped(value, start, needle) {
+    let pos = start;
+    while ((pos = value.indexOf(needle, pos)) >= 0) {
+      if (!isEscaped(value, pos)) return pos;
+      pos += needle.length;
     }
-    try {
-      const decoded = cleanUrl.replace(/^<|>$/g, '');
-      const localPath = path.resolve(documentDir, decoded);
-      const resourceUri = webview.asWebviewUri(vscode.Uri.file(localPath)).toString();
-      return `![${alt}](${resourceUri}${title ? ` $ {
-        title
+    return -1;
+  }
+
+  function findImageLabelEnd(value, start) {
+    let depth = 0;
+    for (let i = start; i < value.length; i++) {
+      if (isEscaped(value, i)) continue;
+      const ch = value.charAt(i);
+      if (ch === '[') depth++;
+      else if (ch === ']') {
+        if (depth === 0) return i;
+        depth--;
       }
-      ` : ''})`;
-    } catch (_) {
-      return full;
     }
-  });
+    return -1;
+  }
+
+  function findDestinationEnd(value, openIndex) {
+    let depth = 0;
+    let quote = '';
+    for (let i = openIndex + 1; i < value.length; i++) {
+      if (isEscaped(value, i)) continue;
+      const ch = value.charAt(i);
+      if (quote) {
+        if (ch === quote) quote = '';
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+        continue;
+      }
+      if (ch === '(') depth++;
+      else if (ch === ')') {
+        if (depth === 0) return i;
+        depth--;
+      }
+    }
+    return -1;
+  }
+
+  function splitDestination(raw) {
+    const value = String(raw || '').trim();
+    if (!value) return null;
+    let url = value;
+    let title = '';
+    if (value.charAt(0) === '<') {
+      const close = findUnescaped(value, 1, '>');
+      if (close < 0) return null;
+      url = value.slice(1, close);
+      const rest = value.slice(close + 1).trim();
+      if (rest) {
+        const m = rest.match(/^(?:"([\s\S]*)"|'([\s\S]*)'|\(([\s\S]*)\))$/);
+        if (!m) return null;
+        title = m[1] != null ? m[1] : (m[2] != null ? m[2] : m[3]);
+        return { url, title, titleStyle: rest.charAt(0) };
+      }
+      return { url, title: '', titleStyle: '' };
+    }
+    const m = value.match(/^(\S+?)(?:[ \t]+(?:"([\s\S]*)"|'([\s\S]*)'|\(([\s\S]*)\)))?$/);
+    if (!m) return null;
+    title = m[2] != null ? m[2] : (m[3] != null ? m[3] : (m[4] != null ? m[4] : ''));
+    return { url: m[1], title, titleStyle: m[2] != null ? '"' : (m[3] != null ? "'" : (m[4] != null ? '(' : '')) };
+  }
+
+  function rewriteImages(line) {
+    let out = '';
+    let i = 0;
+    let codeRun = 0;
+    while (i < line.length) {
+      if (line.charAt(i) === '\\' && i + 1 < line.length) {
+        out += line.slice(i, i + 2);
+        i += 2;
+        continue;
+      }
+      if (line.charAt(i) === '`') {
+        let run = 1;
+        while (line.charAt(i + run) === '`') run++;
+        const fence = '`'.repeat(run);
+        const close = findUnescaped(line, i + run, fence);
+        if (codeRun === 0 && close >= 0) codeRun = run;
+        else if (codeRun === run) codeRun = 0;
+        out += line.slice(i, i + run);
+        i += run;
+        continue;
+      }
+      if (codeRun || line.slice(i, i + 2) !== '![') {
+        out += line.charAt(i);
+        i++;
+        continue;
+      }
+      const labelStart = i + 2;
+      const labelEnd = findImageLabelEnd(line, labelStart);
+      if (labelEnd < 0 || line.charAt(labelEnd + 1) !== '(') {
+        out += line.charAt(i);
+        i++;
+        continue;
+      }
+      const destinationEnd = findDestinationEnd(line, labelEnd + 1);
+      if (destinationEnd < 0) {
+        out += line.charAt(i);
+        i++;
+        continue;
+      }
+      const destination = splitDestination(line.slice(labelEnd + 2, destinationEnd));
+      if (!destination) {
+        out += line.slice(i, destinationEnd + 1);
+        i = destinationEnd + 1;
+        continue;
+      }
+      const cleanUrl = String(destination.url || '');
+      if (/^(?:https?:|data:|vscode-webview-resource:|\/\/)/i.test(cleanUrl)) {
+        out += line.slice(i, destinationEnd + 1);
+        i = destinationEnd + 1;
+        continue;
+      }
+      try {
+        const suffixMatch = cleanUrl.match(/[?#][\s\S]*$/);
+        const pathPart = suffixMatch ? cleanUrl.slice(0, suffixMatch.index) : cleanUrl;
+        const urlSuffix = suffixMatch ? cleanUrl.slice(suffixMatch.index) : '';
+        const localPath = path.resolve(documentDir, pathPart);
+        const resourceUri = webview.asWebviewUri(vscode.Uri.file(localPath)).toString() + urlSuffix;
+        let titlePart = '';
+        if (destination.title) {
+          const style = destination.titleStyle || '"';
+          titlePart = ` ${style}${destination.title}${style === '(' ? ')' : style}`;
+        }
+        out += `![${line.slice(labelStart, labelEnd)}](${resourceUri}${titlePart})`;
+      } catch (_) {
+        out += line.slice(i, destinationEnd + 1);
+      }
+      i = destinationEnd + 1;
+    }
+    return out;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (fenceChar) {
+      lines[i] = line;
+      const close = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+      if (close && close[1].charAt(0) === fenceChar && close[1].length >= fenceLength) {
+        fenceChar = '';
+        fenceLength = 0;
+      }
+      continue;
+    }
+    const fence = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (fence && !(fence[1].charAt(0) === '`' && fence[2].indexOf('`') >= 0)) {
+      fenceChar = fence[1].charAt(0);
+      fenceLength = fence[1].length;
+      lines[i] = line;
+      continue;
+    }
+    if (/^(?: {4}|\t)/.test(line)) {
+      lines[i] = line;
+      continue;
+    }
+    lines[i] = rewriteImages(line);
+  }
+  return lines.join('\n');
 }
+
 function activate(context) {
   let panel = null;
   let currentUri = null;
   let mermaidPanels = new Set();
   let lastSentDocumentVersion = - 1;
+  let webviewReady = false;
   let documentChangeTimer = null;
   let prepareSequence = 0;
   const pendingPrepare = new Map();
@@ -78,6 +238,7 @@ function activate(context) {
         panel = null;
         currentUri = null;
         lastSentDocumentVersion = - 1;
+        webviewReady = false;
         if (documentChangeTimer) {
           clearTimeout(documentChangeTimer);
           documentChangeTimer = null;
@@ -86,7 +247,7 @@ function activate(context) {
         pendingPrepare.clear();
       }, null, context.subscriptions);
       panel.onDidChangeViewState(async event => {
-        if ( ! panel || ! currentUri || ! event.webviewPanel.visible) return;
+        if ( ! panel || ! currentUri || ! event.webviewPanel.visible || ! webviewReady) return;
         // A retained Webview can remain in the editor group where it was
         // created even after the Markdown source tab is activated in another
         // group. Synchronize the Webview's group first. This is a layout fix,
@@ -104,7 +265,8 @@ function activate(context) {
       }, null, context.subscriptions);
       panel.webview.onDidReceiveMessage(async message => {
         if (message.type === 'ready') {
-          await sendDocument(false);
+          webviewReady = true;
+          await sendDocument(true);
         } else if (message.type === 'viewActivated') {
           if ( ! panel || ! currentUri || ! panel.visible) return;
           if (syncPreviewToSourceGroup()) return;
