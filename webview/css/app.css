@@ -206,6 +206,31 @@ a:focus-visible {
   flex: 1
 }
 
+.toolbar-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.toolbar-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.document-width-control {
+  margin-left: 16px;
+}
+
+.doc summary::marker {
+  color: var(--accent);
+}
+
+.doc details > :last-child {
+  margin-bottom: 0;
+}
+
 .doc {
   width: var(--doc-width, 1000px);
   max-width: min(calc(100% - 36px), var(--doc-max-width, 1400px));
@@ -1794,3 +1819,26 @@ body.vscode-webview:not(.mv-preview-ready) #app {
 .table-scroll td.mv-table-align-center { text-align: center; }
 .table-scroll th.mv-table-align-right,
 .table-scroll td.mv-table-align-right { text-align: right; }
+
+
+/* Native HTML disclosure blocks and Markdown content inside <details>. */
+.doc details.md-details {
+  margin: 0.8rem 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+}
+.doc details.md-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.doc details.md-details > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.doc .md-details-content > :first-child {
+  margin-top: 0.65rem;
+}
+.doc .md-details-content > :last-child {
+  margin-bottom: 0.25rem;
+}

@@ -11,6 +11,131 @@ window.MarkdownViewer = window.MarkdownViewer || {
   function normalizeIndentedMarkdown(source) {
     return normalizeNewlines(source);
   }
+  // Canonicalize the three common HTML line-break spellings outside code.
+  // This also applies to table cells, where <br>, <br/> and <br /> should
+  // all render as an actual line break. Inline-code spans and fenced code
+  // blocks are copied unchanged so examples such as `\u003cbr\u003e` stay literal.
+  function normalizeHtmlBreakTags(source) {
+    var lines = normalizeNewlines(source).split('\n');
+    var out = [];
+    var fence = null;
+    var inlineTicks = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      if (fence) {
+        out.push(line);
+        var close = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+        if (close && close[1].charAt(0) === fence.charAt(0) && close[1].length >= fence.length) fence = null;
+        continue;
+      }
+      if (fenceMatch && inlineTicks === 0) {
+        fence = fenceMatch[1];
+        out.push(line);
+        continue;
+      }
+      var result = '';
+      var pos = 0;
+      while (pos < line.length) {
+        var ch = line.charAt(pos);
+        if (ch === '`') {
+          var end = pos + 1;
+          while (end < line.length && line.charAt(end) === '`') end++;
+          var run = end - pos;
+          if (!inlineTicks) inlineTicks = run;
+          else if (inlineTicks === run) inlineTicks = 0;
+          result += line.slice(pos, end);
+          pos = end;
+          continue;
+        }
+        if (!inlineTicks && ch === '<') {
+          var br = line.slice(pos).match(/^<br\s*\/?>/i);
+          if (br) {
+            result += '<br>';
+            pos += br[0].length;
+            continue;
+          }
+        }
+        result += ch;
+        pos++;
+      }
+      out.push(result);
+    }
+    return out.join('\n');
+  }
+
+  // Protect the small set of raw HTML tags supported by this extension from
+  // the lightweight Markdown parser. Restore only normalized, allow-listed tags
+  // after sanitization so user-supplied attributes/scripts cannot pass through.
+  function protectSupportedHtml(source) {
+    var tags = [];
+    var normalized = normalizeNewlines(source);
+    var prefix = uniqueToken(normalized, 'MVHTMLTAGTOKEN_');
+    var lines = normalized.split('\n');
+    var out = [];
+    var fence = null;
+    var inlineTicks = 0;
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li];
+      var fm = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      if (fence) {
+        out.push(line);
+        var fc = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+        if (fc && fc[1].charAt(0) === fence.charAt(0) && fc[1].length >= fence.length) fence = null;
+        continue;
+      }
+      if (fm && inlineTicks === 0) { fence = fm[1]; out.push(line); continue; }
+      var result = '';
+      var pos = 0;
+      while (pos < line.length) {
+        if (line.charAt(pos) === '`') {
+          var tickEnd = pos + 1;
+          while (tickEnd < line.length && line.charAt(tickEnd) === '`') tickEnd++;
+          var run = tickEnd - pos;
+          if (!inlineTicks) inlineTicks = run;
+          else if (inlineTicks === run) inlineTicks = 0;
+          result += line.slice(pos, tickEnd); pos = tickEnd; continue;
+        }
+        if (!inlineTicks && line.charAt(pos) === '<') {
+          var match = line.slice(pos).match(/^<(\/?)(div|p|ul|li|br)\b([^>]*)>/i);
+          if (match) {
+            var name = match[2].toLowerCase();
+            var normalizedTag = name === 'br' ? '<br>' : '<' + (match[1] ? '/' : '') + name + '>';
+            // Closing BR tags are not meaningful; preserve them as text rather than
+            // treating them as a supported structural tag.
+            if (!(name === 'br' && match[1])) {
+              tags.push(normalizedTag);
+              result += prefix + (tags.length - 1) + '_TOKEN';
+              pos += match[0].length;
+              continue;
+            }
+          }
+        }
+        result += line.charAt(pos++);
+      }
+      out.push(result);
+    }
+    return { source: out.join('\n'), prefix: prefix, tags: tags };
+  }
+  function cleanSupportedHtmlLayout(html) {
+    // The bundled lightweight Markdown parser treats each source line as a
+    // paragraph break. Remove only those synthetic wrappers/breaks that become
+    // invalid around restored block-level HTML elements.
+    html = html.replace(/<p>\s*(?=<(?:div|ul|p|details)\b)/gi, '');
+    html = html.replace(/(<\/(?:div|ul|li|p|details)\s*>)\s*<\/p>/gi, '$1');
+    html = html.replace(/<br>\s*(?=<(?:\/?(?:div|p|ul|li|details))\b)/gi, '');
+    html = html.replace(/(<(?:\/?(?:div|p|ul|li|details))\b[^>]*>)\s*<br>/gi, '$1');
+    return html;
+  }
+  function restoreSupportedHtml(html, protectedHtml) {
+    if (!protectedHtml || !protectedHtml.tags.length) return html;
+    for (var i = 0; i < protectedHtml.tags.length; i++) {
+      var token = protectedHtml.prefix + i + '_TOKEN';
+      html = html.split(token).join(protectedHtml.tags[i]);
+    }
+    return html;
+  }
+
   function uniqueToken(source, prefix) {
     var text = String(source || '');
     var n = 0;
@@ -304,14 +429,164 @@ window.MarkdownViewer = window.MarkdownViewer || {
     }
     return html;
   }
+// Extract details blocks with balanced nesting. Each block body is recursively
+// prepared so nested accordions can be rendered without losing their Markdown
+// content (paragraphs, lists, and other block elements).
+function extractDetails(source) {
+    var details = [];
+    var normalized = normalizeNewlines(source);
+    var prefix = uniqueToken(normalized, 'MVDETAILSTOKEN_');
+    var lines = normalized.split('\n');
+    var out = [];
+    var i = 0;
+    var fence = null;
+    while (i < lines.length) {
+        var line = lines[i];
+        var fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+        if (fence) {
+            out.push(line);
+            var closeFence = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+            if (closeFence && closeFence[1].charAt(0) === fence.charAt(0) && closeFence[1].length >= fence.length)
+                fence = null;
+            i++;
+            continue;
+        }
+        if (fenceMatch) {
+            fence = fenceMatch[1];
+            out.push(line);
+            i++;
+            continue;
+        }
+        var opening = line.match(/^\s*<details\b([^>]*)>\s*$/i);
+        if (!opening) {
+            out.push(line);
+            i++;
+            continue;
+        }
+        var summaryIndex = i + 1;
+        while (summaryIndex < lines.length && !lines[summaryIndex].trim()) summaryIndex++;
+        var summaryMatch = summaryIndex < lines.length
+            ? lines[summaryIndex].match(/^\s*<summary\b[^>]*>([\s\S]*?)<\/summary\s*>\s*$/i)
+            : null;
+        if (!summaryMatch) {
+            out.push(line);
+            i++;
+            continue;
+        }
+
+        var bodyLines = [];
+        var j = summaryIndex + 1;
+        var innerFence = null;
+        var depth = 1;
+        var closed = false;
+        for (; j < lines.length; j++) {
+            var bodyLine = lines[j];
+            var bodyFence = bodyLine.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+            if (innerFence) {
+                bodyLines.push(bodyLine);
+                var innerClose = bodyLine.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+                if (innerClose && innerClose[1].charAt(0) === innerFence.charAt(0) && innerClose[1].length >= innerFence.length)
+                    innerFence = null;
+                continue;
+            }
+            if (bodyFence) {
+                innerFence = bodyFence[1];
+                bodyLines.push(bodyLine);
+                continue;
+            }
+            if (/^\s*<details\b[^>]*>\s*$/i.test(bodyLine)) {
+                depth++;
+                bodyLines.push(bodyLine);
+                continue;
+            }
+            if (/^\s*<\/details\s*>\s*$/i.test(bodyLine)) {
+                depth--;
+                if (depth === 0) {
+                    closed = true;
+                    break;
+                }
+                bodyLines.push(bodyLine);
+                continue;
+            }
+            bodyLines.push(bodyLine);
+        }
+        if (!closed) {
+            out.push(line);
+            i++;
+            continue;
+        }
+
+        // Markdown parsers treat four leading spaces as an indented code block.
+        // HTML details content is commonly indented for readability, especially
+        // inside nested details. Remove the shared indentation from the body
+        // before parsing it as Markdown, while preserving relative indentation.
+        var nonBlankIndent = bodyLines
+            .filter(function(bodyLine) { return bodyLine.trim().length > 0; })
+            .map(function(bodyLine) {
+                var match = bodyLine.match(/^[ \t]*/);
+                return match ? match[0].replace(/\t/g, '    ').length : 0;
+            });
+        var commonIndent = nonBlankIndent.length ? Math.min.apply(Math, nonBlankIndent) : 0;
+        if (commonIndent > 0) {
+            bodyLines = bodyLines.map(function(bodyLine) {
+                if (!bodyLine.trim()) return '';
+                var remaining = commonIndent;
+                var cut = 0;
+                while (cut < bodyLine.length && remaining > 0 && (bodyLine.charAt(cut) === ' ' || bodyLine.charAt(cut) === '\t')) {
+                    remaining -= bodyLine.charAt(cut) === '\t' ? 4 : 1;
+                    cut++;
+                }
+                return bodyLine.slice(cut);
+            });
+        }
+        // Recursively extract children before storing the parent body.
+        var preparedBody = extractDetails(bodyLines.join('\n'));
+        var index = details.length;
+        details.push({
+            open: /(?:^|\s)open(?:\s|=|$)/i.test(opening[1]),
+            summary: summaryMatch[1],
+            body: preparedBody.markdown,
+            children: preparedBody.details,
+            childTokenPrefix: preparedBody.tokenPrefix
+        });
+        out.push(prefix + index + '_TOKEN');
+        i = j + 1;
+    }
+    return { markdown: out.join('\n'), details: details, tokenPrefix: prefix };
+}
+function injectDetails(html, details, tokenPrefix) {
+    for (var i = 0; i < details.length; i++) {
+        var item = details[i];
+        var protectedSummary = protectSupportedHtml(item.summary);
+        var parsedSummary = marked.parse(protectedSummary.source, { gfm: true, breaks: true, mangle: false });
+        var summaryHtml = parsedSummary.replace(/^\s*<p>/i, '').replace(/<\/p>\s*$/i, '');
+        summaryHtml = DOMPurify.sanitize(summaryHtml, { USE_PROFILES: { html: true } });
+        summaryHtml = restoreSupportedHtml(summaryHtml, protectedSummary);
+        var protectedBody = protectSupportedHtml(item.body);
+        var bodyHtml = marked.parse(protectedBody.source, { gfm: true, breaks: true, mangle: false });
+        bodyHtml = DOMPurify.sanitize(bodyHtml, { USE_PROFILES: { html: true } });
+        bodyHtml = cleanSupportedHtmlLayout(restoreSupportedHtml(bodyHtml, protectedBody));
+        if (item.children && item.children.length) {
+            bodyHtml = injectDetails(bodyHtml, item.children, item.childTokenPrefix);
+            bodyHtml = cleanSupportedHtmlLayout(bodyHtml);
+        }
+        var open = item.open ? ' open' : '';
+        var block = '<details class="md-details"' + open + '><summary>' + summaryHtml + '</summary><div class="md-details-content">' + bodyHtml + '</div></details>';
+        var token = tokenPrefix + i + '_TOKEN';
+        var tokenRe = new RegExp('<p>\\s*' + token + '\\s*<\\/p>', 'g');
+        html = html.replace(tokenRe, block).replace(new RegExp(token, 'g'), block);
+    }
+    return html;
+}
   M.renderMarkdown = function(source) {
     if ( ! window.marked) throw new Error('Markdownライブラリが読み込まれていません');
     if ( ! window.DOMPurify) throw new Error('サニタイズライブラリが読み込まれていません');
-    var normalizedSource = normalizeIndentedMarkdown(source);
+    var normalizedSource = normalizeHtmlBreakTags(normalizeIndentedMarkdown(source));
     var extracted = extractMermaid(normalizedSource);
     var headingPrepared = normalizeDeepHeadings(extracted.markdown);
-    var markdownForMarked = headingPrepared.markdown;
-    var html = marked.parse(markdownForMarked, {
+    var detailsPrepared = extractDetails(headingPrepared.markdown);
+    var protectedMarkdownHtml = protectSupportedHtml(detailsPrepared.markdown);
+    var html = marked.parse(protectedMarkdownHtml.source, {
       gfm: true, breaks: true, headerIds: true, mangle: false
     });
     // Sanitize ordinary Markdown first. Mermaid has not entered the DOM yet.
@@ -320,6 +595,8 @@ window.MarkdownViewer = window.MarkdownViewer || {
         html: true
       }
     });
+    html = cleanSupportedHtmlLayout(restoreSupportedHtml(html, protectedMarkdownHtml));
+    html = injectDetails(html, detailsPrepared.details, detailsPrepared.tokenPrefix);
     // Promote h6 placeholders to logical levels 7-10 after sanitization.
     // Keeping a real h6 element preserves browser heading behavior while the
     // data attribute/aria-level carries the extended hierarchy.

@@ -6,7 +6,33 @@ window.MarkdownViewer = window.MarkdownViewer || {
     if ( ! p) {
       p = document.createElement('div');
       p.className = 'search-panel';
-      p.innerHTML = '<div class="search-row"><input aria-label="' + M.t('documentSearch') + '" placeholder="' + M.t('searchPlaceholder') + '"><button class="toolbar-btn" data-s="prev">↑</button><button class="toolbar-btn" data-s="next">↓</button><button class="toolbar-btn" data-s="close">' + M.t('searchClose') + '</button></div><div class="search-meta"></div>';
+      // Build the panel with DOM APIs instead of interpolating strings into HTML.
+      // This preserves the same controls while keeping translated text as text/attributes.
+      var row = document.createElement('div');
+      row.className = 'search-row';
+      var input = document.createElement('input');
+      input.setAttribute('aria-label', M.t('documentSearch'));
+      input.placeholder = M.t('searchPlaceholder');
+      row.appendChild(input);
+      var prev = document.createElement('button');
+      prev.className = 'toolbar-btn';
+      prev.setAttribute('data-s', 'prev');
+      prev.textContent = '↑';
+      row.appendChild(prev);
+      var next = document.createElement('button');
+      next.className = 'toolbar-btn';
+      next.setAttribute('data-s', 'next');
+      next.textContent = '↓';
+      row.appendChild(next);
+      var close = document.createElement('button');
+      close.className = 'toolbar-btn';
+      close.setAttribute('data-s', 'close');
+      close.textContent = M.t('searchClose');
+      row.appendChild(close);
+      var meta = document.createElement('div');
+      meta.className = 'search-meta';
+      p.appendChild(row);
+      p.appendChild(meta);
       document.body.appendChild(p);
       p.querySelector('[data-s=close]').onclick = M.closeSearch;
       p.querySelector('[data-s=prev]').onclick = function() {

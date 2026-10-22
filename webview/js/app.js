@@ -5,9 +5,9 @@ window.MarkdownViewer = window.MarkdownViewer || {
   if (M.vscode && document.body) document.body.classList.add('mv-preview-boot');
   var I18N = {
     ja: {
-      settings: '表示設定', toc: '目次', openSidebar: 'サイドバーを開く', searchToc: '目次を検索', open: '開く', notLoaded: '未読込', loading: 'Markdownファイルを開くか、ここへドラッグ＆ドロップしてください', emptyTitle: 'Markdown Viewer', emptyText: 'Markdownファイルを開くか、ここへドラッグ＆ドロップしてください。', theme: 'テーマ', system: 'システム', light: 'ライト', dark: 'ダーク', contrast: 'ハイコントラスト', fontSize: '文字サイズ', lineHeight: '行間', documentWidth: '本文幅', language: '言語', english: 'English', japanese: '日本語', close: '閉じる', widthMinus: '本文−', widthPlus: '本文＋', empty: 'Markdownドキュメントは空です。', rendering: '描画中…', renderError: '読み込み・描画エラー', failed: '処理に失敗しました', codeCopied: 'コードをコピーしました', clipboardUnavailable: 'クリップボードを利用できません', codeCopy: 'コピー', codeWrap: '折り返し', codeCollapse: '折りたたみ', codeExpand: '展開', copyColumn: '列をコピー', tableFirstColumn: '先頭列固定', tableFirstRow: '先頭行固定', tableBoth: '両方固定', tableResetColumns: '列幅リセット', tableResetSize: '表サイズリセット', tableCopy: 'コピー', tableCsv: 'CSV', columnActions: '列の操作', filterColumn: '絞り込み', filterAllClear: 'すべて解除', sortAscending: '昇順', sortDescending: '降順', sortClear: '並べ替え解除', filterTitle: '「{title}」を絞り込み', filterInput: '文字を入力', filterSpecial: '特殊条件', filterValues: '値', filterApply: '適用', filterReset: '解除', emptyValue: '空白', nonEmptyValue: '空白以外', filteringSummary: '{active}列で絞り込み中 · {shown} / {total} 行', tableFiltered: '表を絞り込みました', columnFilterCleared: '列の絞り込みを解除しました', allTableFiltersCleared: '表の絞り込みをすべて解除しました', sortCleared: '表の並べ替えを解除しました', sortedAscending: '昇順に並べ替えました', sortedDescending: '降順に並べ替えました', columnCopied: '列をコピーしました', tableCopied: '表をコピーしました', csvSaved: 'CSVを保存しました', csvSaveFailed: 'CSV保存に失敗しました', tableWidthChanged: '表の横幅を変更しました', tableSizeChanged: '表サイズを変更しました', columnWidthResize: '列幅を変更', mermaidZoom: '倍率', mermaidZoomOut: '縮小', mermaidZoomIn: '拡大', mermaidSource: 'ソースも表示', mermaidOpen: '図だけ表示', popupBlocked: '新しいタブを開けませんでした。ポップアップを許可してください。', mermaidDiagram: 'Mermaid図'
+      settings: '表示設定', toc: '目次', openSidebar: 'サイドバーを開く', searchToc: '目次を検索', open: '開く', notLoaded: '未読込', loading: 'Markdownファイルを開くか、ここへドラッグ＆ドロップしてください', emptyTitle: 'Markdown Viewer', emptyText: 'Markdownファイルを開くか、ここへドラッグ＆ドロップしてください。', theme: 'テーマ', system: 'システム', light: 'ライト', dark: 'ダーク', contrast: 'ハイコントラスト', fontSize: '文字サイズ', fontSizeMinus: '−', fontSizePlus: '＋', lineHeight: '行間', documentWidth: '本文幅', language: '言語', english: 'English', japanese: '日本語', close: '閉じる', widthMinus: '−', widthPlus: '＋', empty: 'Markdownドキュメントは空です。', rendering: '描画中…', renderError: '読み込み・描画エラー', failed: '処理に失敗しました', codeCopied: 'コードをコピーしました', clipboardUnavailable: 'クリップボードを利用できません', codeCopy: 'コピー', codeWrap: '折り返し', codeCollapse: '折りたたみ', codeExpand: '展開', copyColumn: '列をコピー', tableFirstColumn: '先頭列固定', tableFirstRow: '先頭行固定', tableBoth: '両方固定', tableResetColumns: '列幅リセット', tableResetSize: '表サイズリセット', tableCopy: 'コピー', tableCsv: 'CSV', columnActions: '列の操作', filterColumn: '絞り込み', filterAllClear: 'すべて解除', sortAscending: '昇順', sortDescending: '降順', sortClear: '並べ替え解除', filterTitle: '「{title}」を絞り込み', filterInput: '文字を入力', filterSpecial: '特殊条件', filterValues: '値', filterApply: '適用', filterReset: '解除', emptyValue: '空白', nonEmptyValue: '空白以外', filteringSummary: '{active}列で絞り込み中 · {shown} / {total} 行', tableFiltered: '表を絞り込みました', columnFilterCleared: '列の絞り込みを解除しました', allTableFiltersCleared: '表の絞り込みをすべて解除しました', sortCleared: '表の並べ替えを解除しました', sortedAscending: '昇順に並べ替えました', sortedDescending: '降順に並べ替えました', columnCopied: '列をコピーしました', tableCopied: '表をコピーしました', csvSaved: 'CSVを保存しました', csvSaveFailed: 'CSV保存に失敗しました', tableWidthChanged: '表の横幅を変更しました', tableSizeChanged: '表サイズを変更しました', columnWidthResize: '列幅を変更', mermaidZoom: '倍率', mermaidZoomOut: '縮小', mermaidZoomIn: '拡大', mermaidSource: 'ソースも表示', mermaidOpen: '図だけ表示', popupBlocked: '新しいタブを開けませんでした。ポップアップを許可してください。', mermaidDiagram: 'Mermaid図'
     }, en: {
-      settings: 'Display Settings', toc: 'Table of Contents', openSidebar: 'Open sidebar', searchToc: 'Search TOC', open: 'Open', notLoaded: 'Not loaded', loading: 'Open a local Markdown file or drag and drop it here.', emptyTitle: 'Markdown Viewer', emptyText: 'Open a Markdown file or drag and drop it here.', theme: 'Theme', system: 'System', light: 'Light', dark: 'Dark', contrast: 'High Contrast', fontSize: 'Font size', lineHeight: 'Line height', documentWidth: 'Document width', language: 'Language', english: 'English', japanese: 'Japanese', close: 'Close', widthMinus: 'Width −', widthPlus: 'Width +', empty: 'The Markdown document is empty.', rendering: 'Rendering…', renderError: 'Load/render error', failed: 'Operation failed.', codeCopied: 'Code copied.', clipboardUnavailable: 'Clipboard is unavailable.', codeCopy: 'Copy', codeWrap: 'Wrap', codeCollapse: 'Collapse', codeExpand: 'Expand', copyColumn: 'Copy column', tableFirstColumn: 'Freeze first column', tableFirstRow: 'Freeze header row', tableBoth: 'Freeze both', tableResetColumns: 'Reset column widths', tableResetSize: 'Reset table size', tableCopy: 'Copy', tableCsv: 'CSV', columnActions: 'Column actions', filterColumn: 'Filter', filterAllClear: 'Clear all', sortAscending: 'Sort ascending', sortDescending: 'Sort descending', sortClear: 'Clear sort', filterTitle: 'Filter “{title}”', filterInput: 'Enter text', filterSpecial: 'Special conditions', filterValues: 'Values', filterApply: 'Apply', filterReset: 'Clear', emptyValue: 'Blank', nonEmptyValue: 'Non-blank', filteringSummary: 'Filtering {active} column(s) · {shown} / {total} rows', tableFiltered: 'Table filtered', columnFilterCleared: 'Column filter cleared', allTableFiltersCleared: 'All table filters cleared', sortCleared: 'Sort cleared', sortedAscending: 'Sorted ascending', sortedDescending: 'Sorted descending', columnCopied: 'Column copied', tableCopied: 'Table copied', csvSaved: 'CSV saved', csvSaveFailed: 'Failed to save CSV', tableWidthChanged: 'Table width changed', tableSizeChanged: 'Table size changed', columnWidthResize: 'Resize column width', mermaidZoom: 'Zoom', mermaidZoomOut: 'Zoom out', mermaidZoomIn: 'Zoom in', mermaidSource: 'Show source', mermaidOpen: 'Open diagram', popupBlocked: 'The new tab could not be opened. Please allow pop-ups.', mermaidDiagram: 'Mermaid diagram'
+      settings: 'Display Settings', toc: 'Table of Contents', openSidebar: 'Open sidebar', searchToc: 'Search TOC', open: 'Open', notLoaded: 'Not loaded', loading: 'Open a local Markdown file or drag and drop it here.', emptyTitle: 'Markdown Viewer', emptyText: 'Open a Markdown file or drag and drop it here.', theme: 'Theme', system: 'System', light: 'Light', dark: 'Dark', contrast: 'High Contrast', fontSize: 'Font size', fontSizeMinus: '−', fontSizePlus: '＋', lineHeight: 'Line height', documentWidth: 'Document width', language: 'Language', english: 'English', japanese: 'Japanese', close: 'Close', widthMinus: '−', widthPlus: '＋', empty: 'The Markdown document is empty.', rendering: 'Rendering…', renderError: 'Load/render error', failed: 'Operation failed.', codeCopied: 'Code copied.', clipboardUnavailable: 'Clipboard is unavailable.', codeCopy: 'Copy', codeWrap: 'Wrap', codeCollapse: 'Collapse', codeExpand: 'Expand', copyColumn: 'Copy column', tableFirstColumn: 'Freeze first column', tableFirstRow: 'Freeze header row', tableBoth: 'Freeze both', tableResetColumns: 'Reset column widths', tableResetSize: 'Reset table size', tableCopy: 'Copy', tableCsv: 'CSV', columnActions: 'Column actions', filterColumn: 'Filter', filterAllClear: 'Clear all', sortAscending: 'Sort ascending', sortDescending: 'Sort descending', sortClear: 'Clear sort', filterTitle: 'Filter “{title}”', filterInput: 'Enter text', filterSpecial: 'Special conditions', filterValues: 'Values', filterApply: 'Apply', filterReset: 'Clear', emptyValue: 'Blank', nonEmptyValue: 'Non-blank', filteringSummary: 'Filtering {active} column(s) · {shown} / {total} rows', tableFiltered: 'Table filtered', columnFilterCleared: 'Column filter cleared', allTableFiltersCleared: 'All table filters cleared', sortCleared: 'Sort cleared', sortedAscending: 'Sorted ascending', sortedDescending: 'Sorted descending', columnCopied: 'Column copied', tableCopied: 'Table copied', csvSaved: 'CSV saved', csvSaveFailed: 'Failed to save CSV', tableWidthChanged: 'Table width changed', tableSizeChanged: 'Table size changed', columnWidthResize: 'Resize column width', mermaidZoom: 'Zoom', mermaidZoomOut: 'Zoom out', mermaidZoomIn: 'Zoom in', mermaidSource: 'Show source', mermaidOpen: 'Open diagram', popupBlocked: 'The new tab could not be opened. Please allow pop-ups.', mermaidDiagram: 'Mermaid diagram'
     }
   };
   M.t = function(key) {
@@ -33,12 +33,14 @@ window.MarkdownViewer = window.MarkdownViewer || {
   };
   M.refreshText = function() {
     var map = {
-      'open-btn': 'open', 'settings-btn': 'settings', 'width-minus': 'widthMinus', 'width-plus': 'widthPlus'
+      'open-btn': 'open', 'settings-btn': 'settings', 'font-size-minus': 'fontSizeMinus', 'font-size-plus': 'fontSizePlus', 'width-minus': 'widthMinus', 'width-plus': 'widthPlus'
     };
     Object.keys(map).forEach(function(id) {
       var e = document.getElementById(id);
       if (e) e.textContent = M.t(map[id]);
     });
+    document.querySelectorAll('.font-size-control .toolbar-label').forEach(function(e) { e.textContent = M.t('fontSize'); });
+    document.querySelectorAll('.document-width-control .toolbar-label').forEach(function(e) { e.textContent = M.t('documentWidth'); });
     var search = document.querySelector('.toc-search');
     if (search) {
       search.placeholder = M.t('searchToc');
@@ -88,9 +90,15 @@ window.MarkdownViewer = window.MarkdownViewer || {
     var initialContent = M.vscode ? '': '<div class="empty"><div class="empty-card"><h1>' + M.t('emptyTitle') + '</h1><p>' + M.t('emptyText') + '</p></div></div>';
     var initialStatus = M.vscode ? '': M.t('loading');
     var initialFilename = M.vscode ? '': M.t('notLoaded');
-    app.innerHTML = '<div class="app-shell"><header class="topbar"><button class="icon-btn sidebar-toggle" id="toc-btn" aria-expanded="false">☰</button><strong class="brand">' + title + '</strong><span class="filename">' + initialFilename + '</span><div class="top-actions">' + openButton + '<button class="icon-btn" id="settings-btn">' + M.t('settings') + '</button></div></header><div class="workspace"><aside class="sidebar"><div class="sidebar-head"><h2 id="toc-title">' + M.t('toc') + '</h2></div><input class="toc-search" placeholder="' + M.t('searchToc') + '" aria-label="' + M.t('searchToc') + '"><ol class="toc"></ol></aside><main class="main"><div class="reading-toolbar"><span id="status">' + initialStatus + '</span><span class="spacer"></span><button class="toolbar-btn" id="width-minus">' + M.t('widthMinus') + '</button><button class="toolbar-btn" id="width-plus">' + M.t('widthPlus') + '</button></div><article class="doc">' + initialContent + '</article></main></div></div>';
+    app.innerHTML = '<div class="app-shell"><header class="topbar"><button class="icon-btn sidebar-toggle" id="toc-btn" aria-expanded="false">☰</button><strong class="brand">' + title + '</strong><span class="filename">' + initialFilename + '</span><div class="top-actions">' + openButton + '<button class="icon-btn" id="settings-btn">' + M.t('settings') + '</button></div></header><div class="workspace"><aside class="sidebar"><div class="sidebar-head"><h2 id="toc-title">' + M.t('toc') + '</h2></div><input class="toc-search" placeholder="' + M.t('searchToc') + '" aria-label="' + M.t('searchToc') + '"><ol class="toc"></ol></aside><main class="main"><div class="reading-toolbar"><span id="status">' + initialStatus + '</span><span class="spacer"></span><span class="toolbar-control font-size-control"><span class="toolbar-label">' + M.t('fontSize') + '</span><button class="toolbar-btn" id="font-size-minus" aria-label="' + M.t('fontSizeMinus') + '">' + M.t('fontSizeMinus') + '</button><button class="toolbar-btn" id="font-size-plus" aria-label="' + M.t('fontSizePlus') + '">' + M.t('fontSizePlus') + '</button></span><span class="toolbar-control document-width-control"><span class="toolbar-label">' + M.t('documentWidth') + '</span><button class="toolbar-btn" id="width-minus">' + M.t('widthMinus') + '</button><button class="toolbar-btn" id="width-plus">' + M.t('widthPlus') + '</button></span></div><article class="doc">' + initialContent + '</article></main></div></div>';
     document.getElementById('settings-btn').onclick = settings;
     document.getElementById('toc-btn').onclick = M.toggleSidebar;
+    document.getElementById('font-size-minus').onclick = function() {
+      setFontSize(M.settings.fontSize - 1);
+    };
+    document.getElementById('font-size-plus').onclick = function() {
+      setFontSize(M.settings.fontSize + 1);
+    };
     document.getElementById('width-minus').onclick = function() {
       M.settings.docWidth = Math.max(520, M.settings.docWidth - 60);
       M.saveSettings();
@@ -113,7 +121,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
   function settings() {
     var m = document.createElement('div');
     m.className = 'modal open';
-    m.innerHTML = '<div class="modal-card"><h2>' + M.t('settings') + '</h2><div class="settings-grid"><label class="setting">' + M.t('theme') + '<select class="theme-select"><option value="system">' + M.t('system') + '</option><option value="light">' + M.t('light') + '</option><option value="dark">' + M.t('dark') + '</option><option value="high-contrast">' + M.t('contrast') + '</option></select></label><label class="setting">' + M.t('fontSize') + '<input type="number" min="12" max="24" step="1" value="' + M.settings.fontSize + '"></label><label class="setting">' + M.t('lineHeight') + '<input type="number" min="1.2" max="2.5" step=".05" value="' + M.settings.lineHeight + '"></label><label class="setting">' + M.t('documentWidth') + '<input type="number" min="520" max="1200" step="20" value="' + M.settings.docWidth + '"></label><label class="setting">' + M.t('language') + '<select class="language-select"><option value="ja">' + M.t('japanese') + '</option><option value="en">' + M.t('english') + '</option></select></label></div><p><button class="toolbar-btn" data-close>' + M.t('close') + '</button></p></div>';
+    m.innerHTML = '<div class="modal-card"><h2>' + M.t('settings') + '</h2><div class="settings-grid"><label class="setting">' + M.t('theme') + '<select class="theme-select"><option value="system">' + M.t('system') + '</option><option value="light">' + M.t('light') + '</option><option value="dark">' + M.t('dark') + '</option><option value="high-contrast">' + M.t('contrast') + '</option></select></label><label class="setting">' + M.t('fontSize') + '<input class="font-size-input" type="number" min="12" max="24" step="1" value="' + M.settings.fontSize + '"></label><label class="setting">' + M.t('lineHeight') + '<input type="number" min="1.2" max="2.5" step=".05" value="' + M.settings.lineHeight + '"></label><label class="setting">' + M.t('documentWidth') + '<input type="number" min="520" max="1200" step="20" value="' + M.settings.docWidth + '"></label><label class="setting">' + M.t('language') + '<select class="language-select"><option value="ja">' + M.t('japanese') + '</option><option value="en">' + M.t('english') + '</option></select></label></div><p><button class="toolbar-btn" data-close>' + M.t('close') + '</button></p></div>';
     document.body.appendChild(m);
     m.addEventListener('click', function(e) {
       if (e.target === m) m.remove()
@@ -131,9 +139,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
       M.redrawMermaid()
     };
     ins[0].onchange = function() {
-      M.settings.fontSize = + this.value || 16;
-      M.saveSettings();
-      M.applySettings()
+      setFontSize(+this.value || 16);
     };
     ins[1].onchange = function() {
       M.settings.lineHeight = + this.value || 1.85;
@@ -157,6 +163,14 @@ window.MarkdownViewer = window.MarkdownViewer || {
     m.querySelector('[data-close]').onclick = function() {
       m.remove()
     };
+  }
+  function setFontSize(value) {
+    M.settings.fontSize = Math.max(12, Math.min(24, Number(value) || 16));
+    document.querySelectorAll('.font-size-input').forEach(function(input) {
+      input.value = M.settings.fontSize;
+    });
+    M.saveSettings();
+    M.applySettings();
   }
   function normalizeSourceText(text) {
     return String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -1302,7 +1316,17 @@ window.MarkdownViewer = window.MarkdownViewer || {
         renderedDocumentUri = documentUri || null;
       } catch (e) {
         if (request === renderSequence) {
-          doc.innerHTML = '<div class="empty-card"><h2>読み込み・描画エラー</h2><p>' + String(e.message || e) + '</p></div>';
+          // Render exception details as text, not HTML. Error messages may contain
+          // strings originating in document content or third-party renderers.
+          var errorCard = document.createElement('div');
+          errorCard.className = 'empty-card';
+          var errorHeading = document.createElement('h2');
+          errorHeading.textContent = '読み込み・描画エラー';
+          var errorDetail = document.createElement('p');
+          errorDetail.textContent = String(e && e.message || e || 'Unknown error');
+          errorCard.appendChild(errorHeading);
+          errorCard.appendChild(errorDetail);
+          doc.replaceChildren(errorCard);
           M.notify(M.t('failed'));
         }
       } finally {

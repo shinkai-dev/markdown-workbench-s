@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.6
+
+- Redesigned the preview toolbar, arranging font size and content width controls horizontally with labels and **− / +** buttons.
+- Added toolbar font size controls that update the preview text and stay synchronized with the font size setting in the settings modal.
+- Improved toolbar spacing between the font size controls and the content width controls.
+- Added support for collapsible sections using HTML `<details>` and `<summary>` elements, with dedicated styling for a clearer, more polished appearance.
+
 ## 1.2.5
 
 - Simplified Preview tab titles to show the binoculars icon and file name without the colon separator.
