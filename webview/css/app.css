@@ -728,7 +728,7 @@ body.vscode-webview:not(.mv-preview-ready) #app {
   text-align: left;
   cursor: grab;
   user-select: none;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
 }
 
 /* Mermaid frame resize handles: frame dimensions are independent from diagram zoom/pan. */
@@ -833,6 +833,24 @@ body.vscode-webview:not(.mv-preview-ready) #app {
   max-width: none !important;
   height: auto;
   display: block;
+  overflow: visible;
+}
+
+/* Mermaid HTML labels use SVG foreignObject. Keep Markdown paragraph margins
+   from affecting label layout, but do not force a line-height that can exceed
+   Mermaid's measured text box in class diagrams. Allow label content to paint
+   outside a tight foreignObject viewport rather than clipping glyphs. */
+.doc .mermaid-canvas foreignObject {
+  overflow: visible !important;
+}
+
+.doc .mermaid-canvas foreignObject p {
+  margin: 0 !important;
+  line-height: normal !important;
+}
+
+.doc .mermaid-canvas foreignObject div {
+  line-height: normal !important;
 }
 
 .mermaid-source {

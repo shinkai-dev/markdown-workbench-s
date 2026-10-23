@@ -55,6 +55,9 @@ window.MarkdownViewer = window.MarkdownViewer || {
     }
     renderQueue = renderQueue.then(async function() {
       try {
+        // Wait for local/document fonts before Mermaid measures node labels.
+        // Rendering with fallback metrics can produce an SVG viewBox that clips text.
+        if (document.fonts && document.fonts.ready) await document.fonts.ready;
         var theme = document.documentElement.dataset.theme === 'dark' ? 'dark': (document.documentElement.dataset.theme === 'high-contrast' ? 'base': 'default');
         window.mermaid.initialize({
           startOnLoad: false, securityLevel: 'strict', theme: theme

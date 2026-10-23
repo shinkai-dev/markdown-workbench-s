@@ -2,22 +2,14 @@
 
 ## 1.2.7
 
-- Reworked in-document search to highlight every match accurately across Markdown text, tables, and code blocks.
-- Positioned the search panel below the fixed reading toolbar and above document content to prevent it from being obscured.
-- Added live result counts and current-match position, with a dedicated active-match style for light, dark, and high-contrast themes.
-- Replaced the search close label with × and removed the untranslated `searchResults` label.
-- Prevented Ctrl+F from rerunning the previous query when reopening the search panel; live search resumes when the query is edited.
-
-- Allowed table scroll gestures to chain to the Markdown page when a table has no scrollable overflow or reaches its top/bottom edge.
-- Improved default table column sizing to use available horizontal space and reduce unnecessary text wrapping.
-- Recalculate automatic column widths when the table container is resized, while preserving manually resized columns.
-- Fixed language-name detection during the final code-block enhancement pass so JavaScript and TypeScript highlighting is not overwritten with plain-text rendering.
-
-- Expanded lightweight syntax highlighting for common languages, including comments, declaration keywords, access modifiers, imports, and function declarations.
-- Added a 10-language regression fixture covering TypeScript, JavaScript, Python, Java, C#, C, C++, Go, PHP, and SQL, plus nested `<details>` code blocks.
-- Fixed fenced code blocks not being wrapped and displayed correctly when the Markdown parser emits attributes on the `<pre>` element.
-- Preserved language labels and syntax highlighting for fenced code blocks using backtick and tilde fences, including code blocks inside nested `<details>` sections.
-- Added Markdown test cases covering common programming languages and code blocks inside nested collapsible sections.
+- Improved in-document search across Markdown text, tables, and code blocks, with accurate match highlighting, live result counts, and current-match indicators.
+- Fixed search panel positioning and theme-aware active-match styling; closing and reopening the panel no longer reruns the previous query.
+- Improved table scrolling so gestures can chain to the Markdown preview at scroll boundaries.
+- Refined automatic table column sizing to reduce unnecessary wrapping and recalculate widths when the container resizes, while preserving manually resized columns.
+- Improved table header layout with natural text wrapping, centered and bottom-aligned action buttons, and more compact default column widths.
+- Fixed Mermaid scrolling so gestures can propagate to the Markdown preview, and reduced the risk of diagram text being clipped.
+- Expanded lightweight syntax highlighting for common programming languages and fixed language detection and fenced code block rendering, including blocks with `<pre>` attributes and nested `<details>` sections.
+- Added regression fixtures covering 10 programming languages and nested collapsible code blocks.
 
 ## 1.2.6
 
