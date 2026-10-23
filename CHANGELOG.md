@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.7
+- Fixed language-name detection during the final code-block enhancement pass so JavaScript and TypeScript highlighting is not overwritten with plain-text rendering.
+
+- Expanded lightweight syntax highlighting for common languages, including comments, declaration keywords, access modifiers, imports, and function declarations.
+- Added a 10-language regression fixture covering TypeScript, JavaScript, Python, Java, C#, C, C++, Go, PHP, and SQL, plus nested `<details>` code blocks.
+- Fixed fenced code blocks not being wrapped and displayed correctly when the Markdown parser emits attributes on the `<pre>` element.
+- Preserved language labels and syntax highlighting for fenced code blocks using backtick and tilde fences, including code blocks inside nested `<details>` sections.
+- Added Markdown test cases covering common programming languages and code blocks inside nested collapsible sections.
+
 ## 1.2.6
 
 - Redesigned the preview toolbar, arranging font size and content width controls horizontally with labels and **− / +** buttons.

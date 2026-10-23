@@ -11,6 +11,91 @@ window.MarkdownViewer = window.MarkdownViewer || {
   function normalizeIndentedMarkdown(source) {
     return normalizeNewlines(source);
   }
+  // Language identifiers are machine-friendly in Markdown, but the toolbar
+  // should show readable, official language names instead of abbreviations.
+  function languageDisplayName(language) {
+    var raw = String(language || '').toLowerCase().trim().split(/[\s,:{]/)[0];
+    var aliases = {
+      js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
+      ts: 'typescript', tsx: 'typescript', py: 'python', python3: 'python',
+      cs: 'csharp', 'c#': 'csharp', 'c-sharp': 'csharp', csharp: 'csharp',
+      'c++': 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp', hxx: 'cpp',
+      'objective-c': 'objectivec', objc: 'objectivec',
+      sh: 'bash', shell: 'bash', zsh: 'bash', yml: 'yaml', md: 'markdown',
+      html: 'html', htm: 'html', xhtml: 'html', xml: 'xml', svg: 'xml',
+      ps1: 'powershell', ps: 'powershell', golang: 'go', rs: 'rust', kt: 'kotlin',
+      kts: 'kotlin', swift: 'swift', rb: 'ruby', pl: 'perl', dockerfile: 'dockerfile',
+      plaintext: 'text', txt: 'text', text: 'text', '': 'text'
+    };
+    var canonical = aliases[raw] || raw;
+    var names = {
+      javascript: 'JavaScript', typescript: 'TypeScript', python: 'Python', java: 'Java',
+      csharp: 'C#', c: 'C', cpp: 'C++', objectivec: 'Objective-C', go: 'Go', rust: 'Rust',
+      php: 'PHP', ruby: 'Ruby', perl: 'Perl', kotlin: 'Kotlin', swift: 'Swift',
+      bash: 'Bash', powershell: 'PowerShell', sql: 'SQL', json: 'JSON', yaml: 'YAML',
+      html: 'HTML', xml: 'XML', css: 'CSS', scss: 'SCSS', less: 'Less', markdown: 'Markdown',
+      dockerfile: 'Dockerfile', makefile: 'Makefile', diff: 'Diff', ini: 'INI', toml: 'TOML',
+      graphql: 'GraphQL', r: 'R', dart: 'Dart', elixir: 'Elixir', scala: 'Scala',
+      text: 'Plain Text'
+    };
+    if (names[canonical]) return names[canonical];
+    if (!canonical) return 'Plain Text';
+    return canonical.charAt(0).toUpperCase() + canonical.slice(1);
+  }
+  // The lightweight Markdown parser supports fences at up to three leading
+  // spaces. Fences nested in list items commonly have four or more spaces.
+  // Replace those fenced blocks with safe tokens before parsing so they remain
+  // code blocks instead of being flattened into list text/indented code.
+  function protectIndentedListFences(source) {
+    var lines = normalizeNewlines(source).split('\n');
+    var output = [], blocks = [], prefix = uniqueToken(source, 'MVLISTFENCECODE_');
+    var i = 0;
+    while (i < lines.length) {
+      var opening = lines[i].match(/^( {4,})(`{3,}|~{3,})(.*)$/);
+      if (!opening) { output.push(lines[i++]); continue; }
+      var fence = opening[2], marker = fence.charAt(0), minimum = fence.length;
+      var body = [], j = i + 1, closed = false;
+      while (j < lines.length) {
+        var close = lines[j].match(/^ *(?:`{3,}|~{3,})[ \t]*$/);
+        if (close) {
+          var closeFence = close[0].trim();
+          if (closeFence.charAt(0) === marker && closeFence.length >= minimum) { closed = true; break; }
+        }
+        body.push(lines[j]);
+        j++;
+      }
+      if (!closed) { output.push(lines[i++]); continue; }
+      var token = prefix + blocks.length + '_TOKEN';
+      blocks.push({ token: token, language: (opening[3].trim().split(/[ \t]/)[0] || 'text'), code: body.map(function(line) {
+        var indent = opening[1].length;
+        return line.slice(0, indent).trim() === '' ? line.slice(Math.min(indent, (line.match(/^ */) || [''])[0].length)) : line.slice(Math.min(indent, (line.match(/^ */) || [''])[0].length));
+      }).join('\n') });
+      // Keep the token inside the surrounding list item, but do not retain
+      // four or more leading spaces: the bundled parser would treat the token
+      // itself as an indented code block, causing restored <pre> markup to be
+      // displayed literally inside a Plain Text block. The parser accepts up
+      // to three leading spaces for a fence inside a list.
+      var tokenIndent = opening[1].slice(0, Math.min(3, opening[1].length));
+      output.push(tokenIndent + token);
+      i = j + 1;
+    }
+    return { source: output.join('\n'), blocks: blocks, prefix: prefix };
+  }
+  function restoreIndentedListFences(html, protectedBlocks) {
+    if (!protectedBlocks || !protectedBlocks.blocks.length) return html;
+    protectedBlocks.blocks.forEach(function(block) {
+      var lang = block.language || 'text';
+      // Restore as a plain fenced-code equivalent; the common wrapCodeBlocks
+      // pass below performs highlighting and builds the toolbar exactly once.
+      var replacement = '<pre data-code-lang="' + escapeHtml(lang) + '"><code class="language-' + escapeHtml(lang) + '">' + escapeHtml(block.code) + '</code></pre>';
+      var token = block.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // If the parser wrapped the placeholder in a paragraph, replace the
+      // whole paragraph rather than inserting a <pre> inside <p>.
+      html = html.replace(new RegExp('<p>\\s*(?:<br>\\s*)?' + token + '\\s*</p>', 'g'), replacement);
+      html = html.replace(new RegExp('(?:<br>\\s*)?' + token, 'g'), replacement);
+    });
+    return html;
+  }
   // Canonicalize the three common HTML line-break spellings outside code.
   // This also applies to table cells, where <br>, <br/> and <br /> should
   // all render as an actual line break. Inline-code spans and fenced code
@@ -22,10 +107,10 @@ window.MarkdownViewer = window.MarkdownViewer || {
     var inlineTicks = 0;
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
-      var fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      var fenceMatch = line.match(/^ *(`{3,}|~{3,})(.*)$/);
       if (fence) {
         out.push(line);
-        var close = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+        var close = line.match(/^ *(`{3,}|~{3,})[ \t]*$/);
         if (close && close[1].charAt(0) === fence.charAt(0) && close[1].length >= fence.length) fence = null;
         continue;
       }
@@ -77,10 +162,10 @@ window.MarkdownViewer = window.MarkdownViewer || {
     var inlineTicks = 0;
     for (var li = 0; li < lines.length; li++) {
       var line = lines[li];
-      var fm = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      var fm = line.match(/^ *(`{3,}|~{3,})(.*)$/);
       if (fence) {
         out.push(line);
-        var fc = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+        var fc = line.match(/^ *(`{3,}|~{3,})[ \t]*$/);
         if (fc && fc[1].charAt(0) === fence.charAt(0) && fc[1].length >= fence.length) fence = null;
         continue;
       }
@@ -154,7 +239,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
     var tokenPrefix = uniqueToken(source, 'MVMERMAIDTOKEN_');
     var i = 0;
     while (i < lines.length) {
-      var opening = lines[i].match(/^ {0,3}(`{3,}|~{3,})[ \t]*mermaid[ \t]*$/i);
+      var opening = lines[i].match(/^ *(`{3,}|~{3,})[ \t]*mermaid[ \t]*$/i);
       if (!opening) {
         out.push(lines[i]);
         i++;
@@ -168,7 +253,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
       i++;
       var closed = false;
       while (i < lines.length) {
-        var close = lines[i].match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+        var close = lines[i].match(/^ *(`{3,}|~{3,})[ \t]*$/);
         if (close && close[1].charAt(0) === ch && close[1].length >= min) {
           i++;
           closed = true;
@@ -195,12 +280,12 @@ window.MarkdownViewer = window.MarkdownViewer || {
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       if (fence) {
-        var close = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+        var close = line.match(/^ *(`{3,}|~{3,})[ \t]*$/);
         out.push(line);
         if (close && close[1].charAt(0) === fence.charAt(0) && close[1].length >= fence.length) fence = null;
         continue;
       }
-      var fm = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      var fm = line.match(/^ *(`{3,}|~{3,})(.*)$/);
       if (fm) {
         fence = fm[1];
         out.push(line);
@@ -231,11 +316,11 @@ window.MarkdownViewer = window.MarkdownViewer || {
     var source = decodeHtml(rawHtml);
     var lang = String(language || 'text').toLowerCase().trim().split(/[ :]/)[0];
     var aliases = {
-      js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript', py: 'python', sh: 'bash', shell: 'bash', yml: 'yaml', md: 'markdown', html: 'xml', xhtml: 'xml', c: 'c', 'c++': 'cpp', cc: 'cpp', cxx: 'cpp', cs: 'csharp', 'c#': 'csharp'
+      js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'typescript', tsx: 'typescript', py: 'python', sh: 'bash', shell: 'bash', ps1: 'powershell', yml: 'yaml', md: 'markdown', html: 'xml', xhtml: 'xml', c: 'c', 'c++': 'cpp', cc: 'cpp', cxx: 'cpp', h: 'c', hpp: 'cpp', cs: 'csharp', 'c#': 'csharp', csharp: 'csharp', golang: 'go', rs: 'rust', kt: 'kotlin', kts: 'kotlin', swift: 'swift', sqlserver: 'sql', tsql: 'sql', hs: 'haskell', lua: 'lua', pl: 'perl', perl: 'perl', r: 'r'
     };
     lang = aliases[lang] || lang || 'text';
     var sets = {
-      python: 'and as assert async await break case class continue def del elif else except finally for from global if import in is lambda match nonlocal not or pass raise return try while with yield'.split(' '), javascript: 'as async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in instanceof let new of return set static super switch this throw try typeof var void while with yield'.split(' '), typescript: 'as async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in interface instanceof let namespace new of private protected public readonly return set static super switch this throw try type typeof var void while with yield'.split(' '), java: 'abstract assert boolean break byte case catch char class const continue default do double else enum extends final finally float for if implements import instanceof int interface long native new package private protected public return short static strictfp super switch synchronized this throw throws transient try void volatile while'.split(' '), csharp: 'abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while'.split(' '), cpp: 'alignas alignof asm auto bool break case catch char class const constexpr continue default delete do double else enum explicit export extern false float for friend if inline int long namespace new nullptr operator private protected public register return short signed sizeof static struct switch template this throw true try typedef typename union unsigned using virtual void volatile while'.split(' '), sql: 'select from where and or not insert into update delete create alter drop table join inner left right full outer on as group by order having limit offset distinct union all null is like in exists case when then else end asc desc'.split(' '), bash: 'if then else elif fi for while in do done case esac function select time until coproc return export local readonly declare unset true false'.split(' '), xml: 'DOCTYPE'.split(' '), css: 'important'.split(' ')
+      python: 'and as assert async await break case class continue def del elif else except finally for from global if import in is lambda match nonlocal not or pass raise return try while with yield'.split(' '), javascript: 'as async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in instanceof let new of return set static super switch this throw try typeof var void while with yield'.split(' '), typescript: 'abstract any as asserts async await boolean break case catch class const constructor declare debugger default delete do else export extends finally for from function get if implements import in infer instanceof interface is keyof let module namespace never new number object of override private protected public readonly require return satisfies set static string super switch symbol this throw type typeof undefined unique unknown var void while with yield'.split(' '), java: 'abstract assert boolean break byte case catch char class const continue default do double else enum extends final finally float for if implements import instanceof int interface long native new package private protected public record return sealed permits short static strictfp super switch synchronized this throw throws transient try var void volatile while'.split(' '), csharp: 'abstract as async await base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach get global if implicit in init int interface internal is lock long namespace new nint notnull null object operator out override params private protected public record required ref return sbyte sealed set short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using var virtual void volatile while'.split(' '), cpp: 'alignas alignof asm auto bool break case catch char class const constexpr continue default delete do double else enum explicit export extern false float for friend if inline int long namespace new nullptr operator private protected public register return short signed sizeof static struct switch template this throw true try typedef typename union unsigned using virtual void volatile while import module concept requires co_await co_return co_yield'.split(' '), sql: 'select from where and or not insert into update delete create alter drop table join inner left right full outer on as group by order having limit offset distinct union all null is like in exists case when then else end asc desc'.split(' '), bash: 'if then else elif fi for while in do done case esac function select time until coproc return export local readonly declare unset true false'.split(' '), xml: 'DOCTYPE'.split(' '), css: 'important'.split(' '), go: 'break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var any comparable error iota'.split(' '), rust: 'as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while pub'.split(' '), php: 'abstract and array as break callable case catch class clone const continue declare default die do echo else elseif empty enddeclare endfor endforeach endif endswitch endwhile eval exit extends final finally fn for foreach function global goto if implements include include_once instanceof insteadof interface isset list namespace new or print private protected public require require_once return static switch throw trait try unset use var while xor yield'.split(' '), kotlin: 'as break class continue do else false for fun if in interface is null object package return super this throw true try typealias typeof val var when while import'.split(' '), swift: 'associatedtype class deinit enum extension fileprivate func import init inout internal let open operator private protocol public rethrows static struct subscript typealias var break case continue default defer do else fallthrough for guard if repeat return throw switch where while'.split(' '), powershell: 'begin break catch class continue data define do dynamicparam else elseif end endfor endfunction endif endprocess endregion endswitch endtry exit filter finally for foreach from function if in param process return switch throw trap try until using var while'.split(' '), ruby: 'alias and begin break case class def defined do else elsif end ensure false for if in module next nil not or redo rescue retry return self super then true undef unless until when while yield require'.split(' ')
     };
     var keywords = Object.create(null);
     (sets[lang] ||[]).forEach(function(k) {
@@ -245,9 +330,10 @@ window.MarkdownViewer = window.MarkdownViewer || {
       'true': 1, 'false': 1, 'null': 1, 'undefined': 1, 'None': 1, 'True': 1, 'False': 1, 'nil': 1, 'NULL': 1, 'NaN': 1
     };
     var builtins = {
-      python: 'print len range str int float list dict set tuple open super self'.split(' '), javascript: 'console Math JSON Promise Array Object String Number Boolean Date RegExp Error Map Set'.split(' '), typescript: 'console Math JSON Promise Array Object String Number Boolean Date RegExp Error Map Set'.split(' '), java: 'System String Integer Boolean Double Math List Map Set'.split(' '), csharp: 'Console String Int32 Boolean Double List Dictionary Task'.split(' ')
+      python: 'print len range str int float list dict set tuple open super self'.split(' '), javascript: 'console Math JSON Promise Array Object String Number Boolean Date RegExp Error Map Set'.split(' '), typescript: 'console Math JSON Promise Array Object String Number Boolean Date RegExp Error Map Set'.split(' '), java: 'System String Integer Boolean Double Math List Map Set'.split(' '), csharp: 'Console String Int32 Boolean Double List Dictionary Task'.split(' '), cpp: 'std cout cin cerr endl string vector map set unique_ptr shared_ptr size_t'.split(' '), c: 'printf fprintf snprintf scanf malloc calloc realloc free size_t NULL'.split(' '), go: 'append cap close copy delete len make new panic print println recover'.split(' '), rust: 'Some None Ok Err Vec String Option Result Box println format'.split(' '), php: 'echo print var_dump count array_map'.split(' '), kotlin: 'println listOf mutableListOf mapOf runCatching'.split(' '), swift: 'print guard let var'.split(' ')
     };
     var builtinSet = Object.create(null);
+    var inBlockComment = false;
     (builtins[lang] ||[]).forEach(function(k) {
       builtinSet[k] = true;
     });
@@ -265,15 +351,49 @@ window.MarkdownViewer = window.MarkdownViewer || {
       var out = '', i = 0, expectClass = false, expectFunction = false;
       while (i < line.length) {
         var rest = line.slice(i), ch = rest.charAt(0), m;
-        if ((lang === 'python' || lang === 'bash') && ch === '#') {
+        if (inBlockComment) {
+          var blockEnd = rest.indexOf('*/');
+          if (blockEnd < 0) { out += sp('comment', rest); break; }
+          out += sp('comment', rest.slice(0, blockEnd + 2));
+          i += blockEnd + 2;
+          inBlockComment = false;
+          continue;
+        }
+        if ((lang === 'javascript' || lang === 'typescript' || lang === 'java' || lang === 'csharp' || lang === 'cpp' || lang === 'c' || lang === 'css' || lang === 'go' || lang === 'rust' || lang === 'php' || lang === 'kotlin' || lang === 'swift') && rest.indexOf('/*') === 0) {
+          var blockEndNow = rest.indexOf('*/', 2);
+          if (blockEndNow < 0) { out += sp('comment', rest); inBlockComment = true; break; }
+          out += sp('comment', rest.slice(0, blockEndNow + 2));
+          i += blockEndNow + 2;
+          continue;
+        }
+        if ((lang === 'c' || lang === 'cpp') && ch === '#' && line.slice(0, i).trim() === '') {
+          out += sp('meta', rest);
+          break;
+        }
+        if ((lang === 'python' || lang === 'bash' || lang === 'ruby' || lang === 'yaml' || lang === 'powershell' || lang === 'r') && ch === '#') {
           out += sp('comment', rest);
           break;
         }
-        if ((lang === 'javascript' || lang === 'typescript' || lang === 'java' || lang === 'csharp' || lang === 'cpp' || lang === 'c') && rest.indexOf('//') === 0) {
+        // Recognize line-comment markers before token/operator parsing. Keep
+        // the language groups explicit so TypeScript/C# and the other common
+        // // languages use the same comment color. Markers are checked only at
+        // the current lexer position, after strings and block comments have
+        // already been handled, avoiding comment-like text inside strings.
+        var slashCommentLanguages = {
+          javascript: 1, typescript: 1, java: 1, csharp: 1, cpp: 1, c: 1,
+          go: 1, rust: 1, php: 1, kotlin: 1, swift: 1, dart: 1,
+          scala: 1, solidity: 1, groovy: 1, objectivec: 1, objc: 1
+        };
+        if (slashCommentLanguages[lang] && rest.slice(0, 2) === '//') {
           out += sp('comment', rest);
           break;
         }
-        if ((lang === 'sql') && rest.indexOf('--') === 0) {
+        // SQL-family and several other languages use -- for line comments.
+        var dashCommentLanguages = {
+          sql: 1, haskell: 1, lua: 1, ada: 1, elm: 1, vhdl: 1,
+          fortran: 1, erlang: 1, prolog: 1, coffeescript: 1
+        };
+        if (dashCommentLanguages[lang] && rest.slice(0, 2) === '--') {
           out += sp('comment', rest);
           break;
         }
@@ -339,7 +459,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
           } else if (keywords[word]) {
             cls = 'keyword';
             if (word === 'class' || word === 'interface' || word === 'struct' || word === 'enum') expectClass = true;
-            if (word === 'def' || word === 'function') expectFunction = true;
+            if (/^(def|function|func|fn|fun|sub)$/.test(word)) expectFunction = true;
           } else if (literals[word]) cls = 'literal';
           else if (builtinSet[word]) cls = 'built_in';
           else if (/^(true|false|null|undefined|None|True|False|nil|NULL|NaN)$/.test(word)) cls = 'literal';
@@ -375,7 +495,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
     for (var i = 0; i < codes.length; i++) {
       var code = codes[i];
       var pre = code.parentElement;
-      var langMatch = String(code.className || '').match(/(?:^|\\s)language-([^\\s]+)/i);
+      var langMatch = String(code.className || '').match(/(?:^|\s)language-([^\s]+)/i);
       var lang = langMatch ? langMatch[1]: 'text';
       var wrapper = pre.closest('.code-wrap');
       var highlighted = highlightCode(code.textContent || '', lang);
@@ -390,7 +510,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
         var head = document.createElement('div');
         head.className = 'code-head';
         head.innerHTML = '<span class="code-lang"></span><span class="spacer"></span>' + '<button type="button" class="toolbar-btn code-copy">' + M.t('codeCopy') + '</button>';
-        head.querySelector('.code-lang').textContent = lang;
+        head.querySelector('.code-lang').textContent = languageDisplayName(lang);
         pre.parentNode.insertBefore(wrapper, pre);
         wrapper.appendChild(head);
         wrapper.appendChild(pre);
@@ -408,11 +528,15 @@ window.MarkdownViewer = window.MarkdownViewer || {
     });
   };
   function wrapCodeBlocks(html) {
-    return html.replace(/<pre><code([^>]*)>([\s\S]*?)<\/code><\/pre>/g, function(_, attrs, code) {
-      var m = String(attrs || '').match(/class=["']language-([^"']+)["']/i);
-      var safeLang = m ? m[1]: 'text';
+    // The bundled Markdown parser emits a data-code-lang attribute on <pre>,
+    // so accept attributes on both <pre> and <code>. Requiring the exact
+    // string <pre><code> silently skipped every fenced code block.
+    return html.replace(/<pre\b([^>]*)><code\b([^>]*)>([\s\S]*?)<\/code><\/pre>/g, function(_, preAttrs, codeAttrs, code) {
+      var codeLang = String(codeAttrs || '').match(/class=["'][^"']*\blanguage-([^\s"']+)[^"']*["']/i);
+      var preLang = String(preAttrs || '').match(/data-code-lang=["']([^"']*)["']/i);
+      var safeLang = codeLang ? codeLang[1] : (preLang && preLang[1] ? preLang[1] : 'text');
       var highlighted = highlightCode(code, safeLang);
-      return '<div class="code-wrap" data-code-language="' + escapeHtml(safeLang) + '"><div class="code-head"><span class="code-lang">' + escapeHtml(safeLang) + '</span><span class="spacer"></span>' + '<button type="button" class="toolbar-btn code-copy">' + M.t('codeCopy') + '</button>' + '</div><pre><code class="language-' + escapeHtml(safeLang) + '">' + highlighted + '</code></pre></div>';
+      return '<div class="code-wrap" data-code-language="' + escapeHtml(safeLang) + '"><div class="code-head"><span class="code-lang">' + escapeHtml(languageDisplayName(safeLang)) + '</span><span class="spacer"></span>' + '<button type="button" class="toolbar-btn code-copy">' + M.t('codeCopy') + '</button></div><pre><code class="language-' + escapeHtml(safeLang) + '">' + highlighted + '</code></pre></div>';
     });
   }
   function injectMermaidPlaceholders(html, sources, tokenPrefix) {
@@ -442,10 +566,10 @@ function extractDetails(source) {
     var fence = null;
     while (i < lines.length) {
         var line = lines[i];
-        var fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+        var fenceMatch = line.match(/^ *(`{3,}|~{3,})(.*)$/);
         if (fence) {
             out.push(line);
-            var closeFence = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+            var closeFence = line.match(/^ *(`{3,}|~{3,})[ \t]*$/);
             if (closeFence && closeFence[1].charAt(0) === fence.charAt(0) && closeFence[1].length >= fence.length)
                 fence = null;
             i++;
@@ -481,10 +605,10 @@ function extractDetails(source) {
         var closed = false;
         for (; j < lines.length; j++) {
             var bodyLine = lines[j];
-            var bodyFence = bodyLine.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+            var bodyFence = bodyLine.match(/^ *(`{3,}|~{3,})(.*)$/);
             if (innerFence) {
                 bodyLines.push(bodyLine);
-                var innerClose = bodyLine.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+                var innerClose = bodyLine.match(/^ *(`{3,}|~{3,})[ \t]*$/);
                 if (innerClose && innerClose[1].charAt(0) === innerFence.charAt(0) && innerClose[1].length >= innerFence.length)
                     innerFence = null;
                 continue;
@@ -562,10 +686,12 @@ function injectDetails(html, details, tokenPrefix) {
         var summaryHtml = parsedSummary.replace(/^\s*<p>/i, '').replace(/<\/p>\s*$/i, '');
         summaryHtml = DOMPurify.sanitize(summaryHtml, { USE_PROFILES: { html: true } });
         summaryHtml = restoreSupportedHtml(summaryHtml, protectedSummary);
-        var protectedBody = protectSupportedHtml(item.body);
+        var listFencePrepared = protectIndentedListFences(item.body);
+        var protectedBody = protectSupportedHtml(listFencePrepared.source);
         var bodyHtml = marked.parse(protectedBody.source, { gfm: true, breaks: true, mangle: false });
         bodyHtml = DOMPurify.sanitize(bodyHtml, { USE_PROFILES: { html: true } });
         bodyHtml = cleanSupportedHtmlLayout(restoreSupportedHtml(bodyHtml, protectedBody));
+        bodyHtml = restoreIndentedListFences(bodyHtml, listFencePrepared);
         if (item.children && item.children.length) {
             bodyHtml = injectDetails(bodyHtml, item.children, item.childTokenPrefix);
             bodyHtml = cleanSupportedHtmlLayout(bodyHtml);
@@ -585,7 +711,8 @@ function injectDetails(html, details, tokenPrefix) {
     var extracted = extractMermaid(normalizedSource);
     var headingPrepared = normalizeDeepHeadings(extracted.markdown);
     var detailsPrepared = extractDetails(headingPrepared.markdown);
-    var protectedMarkdownHtml = protectSupportedHtml(detailsPrepared.markdown);
+    var listFencePrepared = protectIndentedListFences(detailsPrepared.markdown);
+    var protectedMarkdownHtml = protectSupportedHtml(listFencePrepared.source);
     var html = marked.parse(protectedMarkdownHtml.source, {
       gfm: true, breaks: true, headerIds: true, mangle: false
     });
@@ -596,6 +723,7 @@ function injectDetails(html, details, tokenPrefix) {
       }
     });
     html = cleanSupportedHtmlLayout(restoreSupportedHtml(html, protectedMarkdownHtml));
+    html = restoreIndentedListFences(html, listFencePrepared);
     html = injectDetails(html, detailsPrepared.details, detailsPrepared.tokenPrefix);
     // Promote h6 placeholders to logical levels 7-10 after sanitization.
     // Keeping a real h6 element preserves browser heading behavior while the
