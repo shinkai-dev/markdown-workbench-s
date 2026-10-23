@@ -2,6 +2,7 @@
 
 ## 1.2.7
 
+- Allowed table scroll gestures to chain to the Markdown page when a table has no scrollable overflow or reaches its top/bottom edge.
 - Improved default table column sizing to use available horizontal space and reduce unnecessary text wrapping.
 - Recalculate automatic column widths when the table container is resized, while preserving manually resized columns.
 - Fixed language-name detection during the final code-block enhancement pass so JavaScript and TypeScript highlighting is not overwritten with plain-text rendering.
