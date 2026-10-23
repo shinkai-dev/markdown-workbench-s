@@ -2,6 +2,12 @@
 
 ## 1.2.7
 
+- Reworked in-document search to highlight every match accurately across Markdown text, tables, and code blocks.
+- Positioned the search panel below the fixed reading toolbar and above document content to prevent it from being obscured.
+- Added live result counts and current-match position, with a dedicated active-match style for light, dark, and high-contrast themes.
+- Replaced the search close label with × and removed the untranslated `searchResults` label.
+- Prevented Ctrl+F from rerunning the previous query when reopening the search panel; live search resumes when the query is edited.
+
 - Allowed table scroll gestures to chain to the Markdown page when a table has no scrollable overflow or reaches its top/bottom edge.
 - Improved default table column sizing to use available horizontal space and reduce unnecessary text wrapping.
 - Recalculate automatic column widths when the table container is resized, while preserving manually resized columns.

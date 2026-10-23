@@ -14,6 +14,11 @@
     --code-bg: #151923;
     --code-fg: #edf1f7;
     --quote: #4969d8;
+    --search-hit-bg: #fff0a6;
+    --search-hit-fg: #252000;
+    --search-current-bg: #ffad42;
+    --search-current-fg: #241300;
+    --search-current-outline: #9a4b00;
     --shadow: 0 1px 3px rgba(20, 30, 50, .08);
     --font-ui: "Noto Sans JP Local", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
     --font-code: "Cascadia Code", "JetBrains Mono", "Consolas", monospace
@@ -35,6 +40,11 @@
     --code-bg: #0a0d12;
     --code-fg: #edf1f7;
     --quote: #86a1ff;
+    --search-hit-bg: #66551a;
+    --search-hit-fg: #fff8d6;
+    --search-current-bg: #ffad42;
+    --search-current-fg: #241300;
+    --search-current-outline: #ffe08a;
     --shadow: none
 }
 
@@ -54,5 +64,10 @@
     --code-bg: #000;
     --code-fg: #fff;
     --quote: #00e5ff;
+    --search-hit-bg: #ffff00;
+    --search-hit-fg: #000;
+    --search-current-bg: #00ffff;
+    --search-current-fg: #000;
+    --search-current-outline: #fff;
     --shadow: none
 }

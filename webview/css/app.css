@@ -860,15 +860,17 @@ body.vscode-webview:not(.mv-preview-ready) #app {
 .search-panel {
   position: fixed;
   right: 18px;
-  top: 70px;
-  z-index: 50;
+  /* Keep the panel below the main header but below neither fixed toolbar. */
+  top: 112px;
+  z-index: 130;
   width: min(430px, calc(100% - 36px));
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px;
   box-shadow: var(--shadow);
-  display: none
+  display: none;
+  color: var(--text)
 }
 
 .search-panel.open {
@@ -893,16 +895,25 @@ body.vscode-webview:not(.mv-preview-ready) #app {
 .search-meta {
   font-size: 12px;
   color: var(--muted);
-  margin-top: 7px
+  margin-top: 7px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px
 }
 
 .search-hit {
-  background: #ffd54f;
-  color: #111
+  background: var(--search-hit-bg);
+  color: var(--search-hit-fg);
+  border-radius: 2px;
 }
 
 .search-hit.current {
-  outline: 2px solid var(--accent)
+  background: var(--search-current-bg);
+  color: var(--search-current-fg);
+  outline: 2px solid var(--search-current-outline);
+  outline-offset: 1px;
+  position: relative;
+  z-index: 1;
 }
 
 .modal {
@@ -1161,7 +1172,9 @@ body.vscode-webview:not(.mv-preview-ready) #app {
 }
 
 .table-scroll th {
-  white-space: nowrap
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .table-scroll th .column-filter {
@@ -1490,8 +1503,9 @@ body.vscode-webview:not(.mv-preview-ready) #app {
 .table-scroll td {
   min-width: 0;
   max-width: 1200px;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  /* Keep ordinary cell text intact; only allow emergency breaks for long tokens. */
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .table-scroll th {
@@ -1507,8 +1521,9 @@ body.vscode-webview:not(.mv-preview-ready) #app {
   display: block;
   min-width: 0;
   padding-right: 78px;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  /* Prefer natural wrapping; split an unbroken long token only if necessary. */
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .table-scroll th .column-actions {
@@ -1841,4 +1856,42 @@ body.vscode-webview:not(.mv-preview-ready) #app {
 }
 .doc .md-details-content > :last-child {
   margin-bottom: 0.25rem;
+}
+
+/* Header layout: labels wrap naturally while action buttons share a common
+   bottom edge across the entire header row, even when labels span multiple lines. */
+.table-scroll th {
+  padding-bottom: 2.1rem;
+}
+.table-scroll th .column-title,
+.table-scroll th.mv-column-vertical .column-title {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.table-scroll th .column-actions,
+.table-scroll th.mv-column-vertical .column-actions {
+  position: absolute;
+  top: auto;
+  right: .45rem;
+  bottom: .45rem;
+  left: .45rem;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.table-scroll th.mv-column-compact .column-actions,
+.table-scroll th.mv-column-vertical .column-actions {
+  gap: 2px;
 }

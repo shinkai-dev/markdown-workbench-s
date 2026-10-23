@@ -173,12 +173,25 @@ window.MarkdownViewer = window.MarkdownViewer || {
       var total = widths.reduce(function(sum, width) { return sum + width; }, 0);
       if (available > total && widths.length) {
         var extra = available - total;
+        // Keep short identifier/numeric columns compact. Give more of the
+        // spare width to columns whose measured content actually needs it.
+        var weights = widths.map(function(width, index) {
+          var header = cleanCellText(heads[index]).toLowerCase();
+          var sample = Array.from(tbody.rows).slice(0, 30).map(function(row) {
+            return row.cells[index] ? cleanCellText(row.cells[index]).trim() : '';
+          }).filter(Boolean);
+          var mostlyNumeric = sample.length > 0 && sample.filter(function(value) {
+            return /^[+-]?(?:\d+(?:[.,]\d+)?|\d{4}-\d{2}-\d{2})$/.test(value);
+          }).length / sample.length >= 0.7;
+          var identifier = /^(id|no|番号|識別子|数量|年齢|件数|count|quantity|age)$/.test(header);
+          return identifier || mostlyNumeric ? Math.max(1, width * 0.12) : width * width;
+        });
         var active = widths.map(function(width, index) { return index; });
         while (extra > 0 && active.length) {
-          var weightTotal = active.reduce(function(sum, index) { return sum + widths[index]; }, 0);
+          var weightTotal = active.reduce(function(sum, index) { return sum + weights[index]; }, 0);
           var distributed = 0;
           active.forEach(function(index) {
-            var add = Math.min(1200 - widths[index], Math.floor(extra * widths[index] / weightTotal));
+            var add = Math.min(1200 - widths[index], Math.floor(extra * weights[index] / weightTotal));
             if (add > 0) { widths[index] += add; distributed += add; }
           });
           extra -= distributed;

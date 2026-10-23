@@ -1,116 +1,209 @@
-window.MarkdownViewer = window.MarkdownViewer || {
-};
-(function(M) {
-  var p, results =[], idx = 0;
-  M.openSearch = function() {
-    if ( ! p) {
-      p = document.createElement('div');
-      p.className = 'search-panel';
-      // Build the panel with DOM APIs instead of interpolating strings into HTML.
-      // This preserves the same controls while keeping translated text as text/attributes.
-      var row = document.createElement('div');
-      row.className = 'search-row';
-      var input = document.createElement('input');
-      input.setAttribute('aria-label', M.t('documentSearch'));
-      input.placeholder = M.t('searchPlaceholder');
-      row.appendChild(input);
-      var prev = document.createElement('button');
-      prev.className = 'toolbar-btn';
-      prev.setAttribute('data-s', 'prev');
-      prev.textContent = '↑';
-      row.appendChild(prev);
-      var next = document.createElement('button');
-      next.className = 'toolbar-btn';
-      next.setAttribute('data-s', 'next');
-      next.textContent = '↓';
-      row.appendChild(next);
-      var close = document.createElement('button');
-      close.className = 'toolbar-btn';
-      close.setAttribute('data-s', 'close');
-      close.textContent = M.t('searchClose');
-      row.appendChild(close);
-      var meta = document.createElement('div');
-      meta.className = 'search-meta';
-      p.appendChild(row);
-      p.appendChild(meta);
-      document.body.appendChild(p);
-      p.querySelector('[data-s=close]').onclick = M.closeSearch;
-      p.querySelector('[data-s=prev]').onclick = function() {
-        move( - 1)
-      };
-      p.querySelector('[data-s=next]').onclick = function() {
-        move(1)
-      };
-      p.querySelector('input').oninput = run
-    }
-    p.classList.add('open');
-    p.querySelector('input').focus()
+window.MarkdownViewer = window.MarkdownViewer || {};
+(function (M) {
+  var panel = null;
+  var results = [];
+  var index = -1;
+
+  M.openSearch = function () {
+    if (!panel) createPanel();
+    panel.classList.add('open');
+    var input = panel.querySelector('input');
+    input.focus();
+    input.select();
+    // Opening the panel must not rerun a previous query. Search starts only
+    // when the user changes the input; closing the panel clears prior results.
+    results = [];
+    index = -1;
+    updateMeta();
   };
-  M.closeSearch = function() {
-    if (p) p.classList.remove('open');
-    clear()
-  };
-  function clear() {
-    document.querySelectorAll('.search-hit').forEach(function(x) {
-      x.replaceWith(document.createTextNode(x.textContent))
-    });
-    results =[]
-  }
-  function run() {
-    clear();
-    var q = p.querySelector('input').value;
-    if ( ! q) return;
-    var root = document.querySelector('.doc'), text = root.innerText, low = text.toLowerCase(), needle = q.toLowerCase(), pos = 0;
-    while ((pos = low.indexOf(needle, pos)) >= 0) {
-      results.push(pos);
-      pos += needle.length
+
+  M.closeSearch = function () {
+    if (panel) {
+      panel.classList.remove('open');
+      // Do not carry a stale query into the next opening. The panel opens
+      // idle, and the next user input starts a fresh immediate search.
+      var input = panel.querySelector('input');
+      if (input) input.value = '';
     }
-    p.querySelector('.search-meta').textContent = M.t('searchResults').replace('{n}', results.length);
-    idx = 0;
-    highlight(0)
-  }
-  function highlight(n) {
-    if ( ! results.length) return;
-    idx =(n + results.length)%results.length;
-    var needle = p.querySelector('input').value, root = document.querySelector('.doc');
-    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), nodes =[], acc = 0, target = results[idx], node;
-    while (node = walker.nextNode()) {
-      var next = acc + node.nodeValue.length;
-      if (target >= acc && target < next) {
-        nodes.push({
-          node: node, start: target - acc
-        });
-        break
+    clearHighlights();
+    results = [];
+    index = -1;
+    updateMeta();
+  };
+
+  function createPanel() {
+    panel = document.createElement('div');
+    panel.className = 'search-panel';
+    panel.setAttribute('role', 'search');
+
+    var row = document.createElement('div');
+    row.className = 'search-row';
+
+    var input = document.createElement('input');
+    input.type = 'search';
+    input.setAttribute('aria-label', M.t('documentSearch'));
+    input.placeholder = M.t('searchPlaceholder');
+    row.appendChild(input);
+
+    var prev = document.createElement('button');
+    prev.className = 'toolbar-btn';
+    prev.type = 'button';
+    prev.setAttribute('data-s', 'prev');
+    prev.setAttribute('aria-label', M.t('searchPrevious'));
+    prev.textContent = '↑';
+    row.appendChild(prev);
+
+    var next = document.createElement('button');
+    next.className = 'toolbar-btn';
+    next.type = 'button';
+    next.setAttribute('data-s', 'next');
+    next.setAttribute('aria-label', M.t('searchNext'));
+    next.textContent = '↓';
+    row.appendChild(next);
+
+    var close = document.createElement('button');
+    close.className = 'toolbar-btn search-close';
+    close.type = 'button';
+    close.setAttribute('data-s', 'close');
+    close.setAttribute('aria-label', M.t('searchClose'));
+    close.textContent = '×';
+    row.appendChild(close);
+
+    var meta = document.createElement('div');
+    meta.className = 'search-meta';
+    meta.setAttribute('aria-live', 'polite');
+
+    panel.appendChild(row);
+    panel.appendChild(meta);
+    document.body.appendChild(panel);
+
+    close.onclick = M.closeSearch;
+    prev.onclick = function () { move(-1); };
+    next.onclick = function () { move(1); };
+    input.addEventListener('input', runSearch);
+    input.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        move(event.shiftKey ? -1 : 1);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        M.closeSearch();
       }
-      acc = next
-    }
-    if (nodes[0]) {
-      var x = nodes[0], s = x.node.nodeValue, a = s.slice(0, x.start), b = s.slice(x.start + needle.length);
-      var frag = document.createDocumentFragment();
-      if (a) frag.appendChild(document.createTextNode(a));
-      var mark = document.createElement('mark');
-      mark.className = 'search-hit current';
-      mark.textContent = s.slice(x.start, x.start + needle.length);
-      frag.appendChild(mark);
-      if (b) frag.appendChild(document.createTextNode(b));
-      x.node.parentNode.replaceChild(frag, x.node);
-      mark.scrollIntoView({
-        behavior: 'smooth', block: 'center'
-      })
-    }
+    });
+    updateMeta();
   }
-  function move(d) {
-    highlight(idx + d)
+
+  function clearHighlights() {
+    if (!panel) return;
+    var root = document.querySelector('.doc');
+    if (!root) return;
+    root.querySelectorAll('.search-hit').forEach(function (hit) {
+      hit.replaceWith(document.createTextNode(hit.textContent));
+    });
+    root.normalize();
   }
-  M.refreshSearchText = function() {
-    if ( ! p) return;
-    var input = p.querySelector('input');
-    if (input) {
-      input.setAttribute('aria-label', M.t('documentSearch'));
-      input.placeholder = M.t('searchPlaceholder')
+
+  function runSearch() {
+    clearHighlights();
+    results = [];
+    index = -1;
+
+    var root = document.querySelector('.doc');
+    var input = panel && panel.querySelector('input');
+    var query = input ? input.value : '';
+    if (!root || !query) {
+      updateMeta();
+      return;
     }
-    var close = p.querySelector('[data-s=close]');
-    if (close) close.textContent = M.t('searchClose');
-    if (p.querySelector('.search-meta') && results.length) p.querySelector('.search-meta').textContent = M.t('searchResults').replace('{n}', results.length)
+
+    var lowerQuery = query.toLocaleLowerCase();
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        var parent = node.parentElement;
+        if (!parent || parent.closest('button, input, textarea, select, option, script, style, [hidden], details:not([open]), .search-hit, .table-toolbar, .table-actions, .column-actions, .mermaid-controls, .mermaid-source:not(.show-source)')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+
+    var nodes = [];
+    var node;
+    while ((node = walker.nextNode())) nodes.push(node);
+
+    nodes.forEach(function (textNode) {
+      var original = textNode.nodeValue;
+      var lowerText = original.toLocaleLowerCase();
+      var positions = [];
+      var from = 0;
+      var found;
+      while ((found = lowerText.indexOf(lowerQuery, from)) !== -1) {
+        positions.push(found);
+        from = found + Math.max(1, lowerQuery.length);
+      }
+      if (!positions.length || !textNode.parentNode) return;
+
+      var fragment = document.createDocumentFragment();
+      var cursor = 0;
+      positions.forEach(function (start) {
+        if (start > cursor) fragment.appendChild(document.createTextNode(original.slice(cursor, start)));
+        var hit = document.createElement('mark');
+        hit.className = 'search-hit';
+        hit.textContent = original.slice(start, start + query.length);
+        fragment.appendChild(hit);
+        results.push(hit);
+        cursor = start + query.length;
+      });
+      if (cursor < original.length) fragment.appendChild(document.createTextNode(original.slice(cursor)));
+      textNode.parentNode.replaceChild(fragment, textNode);
+    });
+
+    if (results.length) {
+      index = 0;
+      setCurrent(false);
+    }
+    updateMeta();
+    if (results.length) scrollToCurrent();
   }
+
+  function setCurrent(shouldScroll) {
+    results.forEach(function (hit, i) {
+      hit.classList.toggle('current', i === index);
+      hit.setAttribute('aria-current', i === index ? 'true' : 'false');
+    });
+    updateMeta();
+    if (shouldScroll) scrollToCurrent();
+  }
+
+  function scrollToCurrent() {
+    if (index < 0 || !results[index] || !results[index].isConnected) return;
+    results[index].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+  }
+
+  function move(delta) {
+    if (!results.length) return;
+    index = (index + delta + results.length) % results.length;
+    setCurrent(true);
+  }
+
+  function updateMeta() {
+    if (!panel) return;
+    var meta = panel.querySelector('.search-meta');
+    if (!meta) return;
+    var count = results.length;
+    var countText = M.t('searchResults').replace('{n}', String(count));
+    meta.textContent = countText + (count && index >= 0 ? ' · ' + (index + 1) + '/' + count : '');
+  }
+
+  M.refreshSearchText = function () {
+    if (!panel) return;
+    var input = panel.querySelector('input');
+    input.setAttribute('aria-label', M.t('documentSearch'));
+    input.placeholder = M.t('searchPlaceholder');
+    panel.querySelector('[data-s=prev]').setAttribute('aria-label', M.t('searchPrevious'));
+    panel.querySelector('[data-s=next]').setAttribute('aria-label', M.t('searchNext'));
+    panel.querySelector('[data-s=close]').setAttribute('aria-label', M.t('searchClose'));
+    updateMeta();
+  };
 })(window.MarkdownViewer);
