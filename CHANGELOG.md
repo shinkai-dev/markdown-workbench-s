@@ -1,6 +1,9 @@
 # Changelog
 
 ## 1.2.7
+
+- Improved default table column sizing to use available horizontal space and reduce unnecessary text wrapping.
+- Recalculate automatic column widths when the table container is resized, while preserving manually resized columns.
 - Fixed language-name detection during the final code-block enhancement pass so JavaScript and TypeScript highlighting is not overwritten with plain-text rendering.
 
 - Expanded lightweight syntax highlighting for common languages, including comments, declaration keywords, access modifiers, imports, and function declarations.

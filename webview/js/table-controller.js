@@ -167,9 +167,37 @@ window.MarkdownViewer = window.MarkdownViewer || {
       });
       return Math.min(maxByColumns, Math.max(96, Math.ceil(maxContent)));
     }
-    heads.forEach(function(th, index) {
-      initialWidths[index] = preferredWidth(index)
-    });
+    function calculateInitialWidths() {
+      var widths = heads.map(function(th, index) { return preferredWidth(index); });
+      var available = scroll.clientWidth;
+      var total = widths.reduce(function(sum, width) { return sum + width; }, 0);
+      if (available > total && widths.length) {
+        var extra = available - total;
+        var active = widths.map(function(width, index) { return index; });
+        while (extra > 0 && active.length) {
+          var weightTotal = active.reduce(function(sum, index) { return sum + widths[index]; }, 0);
+          var distributed = 0;
+          active.forEach(function(index) {
+            var add = Math.min(1200 - widths[index], Math.floor(extra * widths[index] / weightTotal));
+            if (add > 0) { widths[index] += add; distributed += add; }
+          });
+          extra -= distributed;
+          active = active.filter(function(index) { return widths[index] < 1200; });
+          if (!distributed && extra > 0 && active.length) {
+            widths[active[active.length - 1]] += 1;
+            extra -= 1;
+          }
+        }
+      }
+      return widths;
+    }
+    function applyInitialWidths() {
+      initialWidths = calculateInitialWidths();
+      initialWidths.forEach(function(width, index) {
+        if (cols[index]) cols[index].style.width = width + 'px';
+      });
+    }
+    initialWidths = calculateInitialWidths();
     heads.forEach(function(th, index) {
       var c = document.createElement('col');
       c.style.width = initialWidths[index] + 'px';
@@ -182,12 +210,10 @@ window.MarkdownViewer = window.MarkdownViewer || {
     });
     table.insertBefore(cg, table.firstChild);
     function resetColumns() {
-      initialWidths =[];
-      heads.forEach(function(th, index) {
-        initialWidths[index] = preferredWidth(index);
-        cols[index].style.width = initialWidths[index] + 'px';
+      heads.forEach(function(th) {
         th.classList.remove('mv-column-user-resized', 'mv-column-compact', 'mv-column-vertical')
-      })
+      });
+      applyInitialWidths();
     }
     var filters = heads.map(function() {
       return {
@@ -620,6 +646,14 @@ window.MarkdownViewer = window.MarkdownViewer || {
       handle.addEventListener('pointermove', mv);
       handle.addEventListener('pointerup', up)
     });
+    if (typeof ResizeObserver === 'function') {
+      var tableWidthObserver = new ResizeObserver(function() {
+        if (heads.some(function(th) { return th.classList.contains('mv-column-user-resized'); })) return;
+        applyInitialWidths();
+      });
+      tableWidthObserver.observe(scroll);
+      block._mvTableWidthObserver = tableWidthObserver;
+    }
   }
   M.captureTableStates = function(root) {
     var out =[];

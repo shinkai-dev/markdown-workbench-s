@@ -569,7 +569,7 @@ body.vscode-webview:not(.mv-preview-ready) #app {
 
 .table-scroll table {
   min-width: max-content;
-  width: max-content;
+  width: 100%;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0
