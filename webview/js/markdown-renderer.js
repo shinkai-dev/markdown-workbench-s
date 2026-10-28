@@ -149,6 +149,76 @@ window.MarkdownViewer = window.MarkdownViewer || {
     return out.join('\n');
   }
 
+  // Remove HTML comments from rendered Markdown without altering fenced or inline code.
+  function stripHtmlComments(source) {
+    var lines = normalizeNewlines(source).split('\n');
+    var out = [];
+    var fence = null;
+    var inlineTicks = 0;
+    var inComment = false;
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li];
+      var fenceMatch = line.match(/^ *(`{3,}|~{3,})(.*)$/);
+      if (!inComment && inlineTicks === 0 && fenceMatch) {
+        if (!fence) fence = fenceMatch[1];
+        else if (fenceMatch[1].charAt(0) === fence.charAt(0) && fenceMatch[1].length >= fence.length && /^[ \t]*$/.test(fenceMatch[2])) fence = null;
+        out.push(line);
+        continue;
+      }
+      if (fence) { out.push(line); continue; }
+      var result = '';
+      var pos = 0;
+      while (pos < line.length) {
+        if (inComment) {
+          var commentEnd = line.indexOf('-->', pos);
+          if (commentEnd < 0) { pos = line.length; break; }
+          inComment = false;
+          pos = commentEnd + 3;
+          continue;
+        }
+        if (!inlineTicks && line.slice(pos, pos + 4) === '<!--') {
+          inComment = true;
+          pos += 4;
+          continue;
+        }
+        if (line.charAt(pos) === '`') {
+          var tickEnd = pos + 1;
+          while (tickEnd < line.length && line.charAt(tickEnd) === '`') tickEnd++;
+          var run = tickEnd - pos;
+          if (!inlineTicks) inlineTicks = run;
+          else if (inlineTicks === run) inlineTicks = 0;
+          result += line.slice(pos, tickEnd);
+          pos = tickEnd;
+          continue;
+        }
+        result += line.charAt(pos++);
+      }
+      out.push(result);
+    }
+    return out.join('\n');
+  }
+  function safeHtmlHref(value) {
+    var href = String(value || '').trim();
+    if (!href) return '';
+    if (href.charAt(0) === '#') return href;
+    if (/^(https?:|mailto:)/i.test(href)) return href;
+    // Permit ordinary relative links, but never executable or script-like schemes.
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(href) && !/^\/\//.test(href)) return href;
+    return '';
+  }
+  function normalizeAnchorAttributes(raw) {
+    var attrs = '';
+    var hrefMatch = raw.match(/(?:^|\s)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    var idMatch = raw.match(/(?:^|\s)id\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    var titleMatch = raw.match(/(?:^|\s)title\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    var href = hrefMatch && safeHtmlHref(hrefMatch[1] || hrefMatch[2] || hrefMatch[3]);
+    var id = idMatch && (idMatch[1] || idMatch[2] || idMatch[3]);
+    var title = titleMatch && (titleMatch[1] || titleMatch[2] || titleMatch[3]);
+    if (href) attrs += ' href="' + escapeHtml(href) + '"';
+    if (id && /^[A-Za-z][A-Za-z0-9_.:-]*$/.test(id)) attrs += ' id="' + escapeHtml(id) + '"';
+    if (title) attrs += ' title="' + escapeHtml(title) + '"';
+    return attrs;
+  }
   // Protect the small set of raw HTML tags supported by this extension from
   // the lightweight Markdown parser. Restore only normalized, allow-listed tags
   // after sanitization so user-supplied attributes/scripts cannot pass through.
@@ -182,10 +252,14 @@ window.MarkdownViewer = window.MarkdownViewer || {
           result += line.slice(pos, tickEnd); pos = tickEnd; continue;
         }
         if (!inlineTicks && line.charAt(pos) === '<') {
-          var match = line.slice(pos).match(/^<(\/?)(div|p|ul|li|br)\b([^>]*)>/i);
+          var match = line.slice(pos).match(/^<(\/?)(div|p|ul|li|br|a|strong)\b([^>]*)>/i);
           if (match) {
             var name = match[2].toLowerCase();
-            var normalizedTag = name === 'br' ? '<br>' : '<' + (match[1] ? '/' : '') + name + '>';
+            var normalizedTag;
+            if (name === 'br') normalizedTag = '<br>';
+            else if (match[1]) normalizedTag = '</' + name + '>';
+            else if (name === 'a') normalizedTag = '<a' + normalizeAnchorAttributes(match[3]) + '>';
+            else normalizedTag = '<' + name + '>';
             // Closing BR tags are not meaningful; preserve them as text rather than
             // treating them as a supported structural tag.
             if (!(name === 'br' && match[1])) {
@@ -210,6 +284,14 @@ window.MarkdownViewer = window.MarkdownViewer || {
     html = html.replace(/(<\/(?:div|ul|li|p|details)\s*>)\s*<\/p>/gi, '$1');
     html = html.replace(/<br>\s*(?=<(?:\/?(?:div|p|ul|li|details))\b)/gi, '');
     html = html.replace(/(<(?:\/?(?:div|p|ul|li|details))\b[^>]*>)\s*<br>/gi, '$1');
+    // A paragraph containing only an empty ID anchor is a Markdown-parser
+    // artifact. Keep the anchor inline, but remove the block wrapper so it
+    // neither consumes a visual line nor creates a blank line before headings.
+    html = html.replace(/<p>\s*(<a\b(?=[^>]*\bid=)[^>]*>\s*<\/a>)\s*<\/p>/gi, '$1');
+    // With breaks enabled, an empty ID anchor on its own source line can be
+    // followed by a synthetic <br> inside the same paragraph. That break
+    // creates a visible blank line before the actual first content.
+    html = html.replace(/(<a\b(?=[^>]*\bid=)[^>]*>\s*<\/a>)\s*<br\s*\/?\s*>/gi, '$1');
     return html;
   }
   function restoreSupportedHtml(html, protectedHtml) {
@@ -589,8 +671,11 @@ function extractDetails(source) {
         }
         var summaryIndex = i + 1;
         while (summaryIndex < lines.length && !lines[summaryIndex].trim()) summaryIndex++;
+        // Allow valid inline content immediately after </summary>, e.g. an
+        // anchor on the same line. Keep that trailing content as the first
+        // line of the details body instead of rejecting the whole block.
         var summaryMatch = summaryIndex < lines.length
-            ? lines[summaryIndex].match(/^\s*<summary\b[^>]*>([\s\S]*?)<\/summary\s*>\s*$/i)
+            ? lines[summaryIndex].match(/^\s*<summary\b[^>]*>([\s\S]*?)<\/summary\s*>(.*)$/i)
             : null;
         if (!summaryMatch) {
             out.push(line);
@@ -598,7 +683,8 @@ function extractDetails(source) {
             continue;
         }
 
-        var bodyLines = [];
+        var summaryTail = (summaryMatch[2] || '').trim();
+        var bodyLines = summaryTail ? [summaryTail] : [];
         var j = summaryIndex + 1;
         var innerFence = null;
         var depth = 1;
@@ -707,7 +793,7 @@ function injectDetails(html, details, tokenPrefix) {
   M.renderMarkdown = function(source) {
     if ( ! window.marked) throw new Error('Markdownライブラリが読み込まれていません');
     if ( ! window.DOMPurify) throw new Error('サニタイズライブラリが読み込まれていません');
-    var normalizedSource = normalizeHtmlBreakTags(normalizeIndentedMarkdown(source));
+    var normalizedSource = normalizeHtmlBreakTags(stripHtmlComments(normalizeIndentedMarkdown(source)));
     var extracted = extractMermaid(normalizedSource);
     var headingPrepared = normalizeDeepHeadings(extracted.markdown);
     var detailsPrepared = extractDetails(headingPrepared.markdown);

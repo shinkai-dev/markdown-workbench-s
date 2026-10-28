@@ -280,6 +280,14 @@ function activate(context) {
             pendingPrepare.delete(message.requestId);
             waiter();
           }
+        } else if (message.type === 'openExternal') {
+          const rawUrl = typeof message.url === 'string' ? message.url : '';
+          try {
+            const uri = vscode.Uri.parse(rawUrl);
+            if (['http', 'https', 'mailto'].includes(uri.scheme)) await vscode.env.openExternal(uri);
+          } catch (error) {
+            console.warn('Unable to open external Markdown link:', error);
+          }
         } else if (message.type === 'openSource') {
           await revealSource(message.line || 1, message.column || 1);
         } else if (message.type === 'openMermaid') {

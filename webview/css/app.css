@@ -250,6 +250,23 @@ a:focus-visible {
   scroll-margin-top: 76px
 }
 
+/* Briefly identify the destination of an in-document anchor link. */
+.doc .anchor-target-highlight {
+  animation: anchor-target-highlight 1.8s ease-out;
+}
+
+@keyframes anchor-target-highlight {
+  0%, 35% {
+    background-color: var(--highlight-bg, rgba(255, 210, 80, .32));
+    outline: 2px solid var(--focus-border, rgba(255, 190, 40, .8));
+    outline-offset: 3px;
+  }
+  100% {
+    background-color: transparent;
+    outline-color: transparent;
+  }
+}
+
 .doc h1 {
   font-size: 2em;
   border-bottom: 1px solid var(--border);
@@ -1863,14 +1880,27 @@ body.vscode-webview:not(.mv-preview-ready) #app {
 }
 .doc details.md-details > summary {
   cursor: pointer;
+  font-size: 1.25em;
   font-weight: 600;
+  margin-bottom: 0.25rem;
 }
 .doc details.md-details > summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 .doc .md-details-content > :first-child {
-  margin-top: 0.65rem;
+  margin-top: 0;
+}
+/* An ID anchor at the start of details is inline and must not add a blank
+   paragraph-sized gap before the first real content block. */
+.doc .md-details-content > a[id] + p,
+.doc .md-details-content > a[id] + h1,
+.doc .md-details-content > a[id] + h2,
+.doc .md-details-content > a[id] + h3,
+.doc .md-details-content > a[id] + h4,
+.doc .md-details-content > a[id] + h5,
+.doc .md-details-content > a[id] + h6 {
+  margin-top: 0;
 }
 .doc .md-details-content > :last-child {
   margin-bottom: 0.25rem;

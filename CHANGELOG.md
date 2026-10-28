@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.8
+
+- Increased accordion `<summary>` title font size to `1.25em` and added a subtle bottom margin to improve visual distinction and readability.
+- Added support for hiding HTML comments in the rendered preview while preserving comment text inside code blocks.
+- Enabled safe HTML `<a>` and `<strong>` tags, including fragment links that scroll to matching element IDs within the preview.
+- Opened supported external links in the default browser and blocked unsafe URL schemes.
+- Preserved the previous search query when closing and reopening the search panel without automatically rerunning it.
+
 ## 1.2.7
 
 - Improved in-document search across Markdown text, tables, and code blocks, with accurate match highlighting, live result counts, and current-match indicators.

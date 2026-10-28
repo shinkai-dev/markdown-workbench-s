@@ -1250,6 +1250,177 @@ window.MarkdownViewer = window.MarkdownViewer || {
     setTimeout(restoreScroll, 60);
     setTimeout(restoreScroll, 180);
   }
+  function installDocumentLinkNavigation(doc) {
+    if (!doc || doc.dataset.linkNavigationInstalled === 'true') return;
+    doc.dataset.linkNavigationInstalled = 'true';
+    doc.addEventListener('click', function(event) {
+      var link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+      if (!link || !doc.contains(link)) return;
+      var href = link.getAttribute('href') || '';
+      if (href.charAt(0) === '#') {
+        var id;
+        try { id = decodeURIComponent(href.slice(1)); } catch (_) { id = href.slice(1); }
+        var target = id ? document.getElementById(id) : null;
+        if (!target || !doc.contains(target)) return;
+        event.preventDefault();
+        // Ensure anchors inside collapsed accordions can be measured and shown.
+        var containingDetails = target.closest && target.closest('details');
+        if (containingDetails) containingDetails.open = true;
+
+        // Resolve the visual destination from the rendered DOM, not from the
+        // anchor's parent wrapper. Markdown parsing can introduce empty <p>
+        // elements between an empty anchor and its heading.
+        var summary = target.closest && target.closest('summary');
+        var heading = target.closest && target.closest('h1, h2, h3, h4, h5, h6');
+        var anchorElement = target.tagName && target.tagName.toLowerCase() === 'a' ? target : null;
+        var detailsRoot = target.closest && target.closest('details');
+
+        function isEmptyAnchorWrapper(element) {
+          if (!element || !element.tagName) return false;
+          var tag = element.tagName.toLowerCase();
+          if (tag === 'a') return !((element.textContent || '').trim());
+          if (!/^(p|div|span)$/.test(tag)) return false;
+          return !((element.textContent || '').trim()) &&
+            !element.querySelector('img, video, audio, input, table, pre, ul, ol, details, blockquote');
+        }
+        function nextMeaningfulElement(element) {
+          // Walk forward in rendered document order, skipping only empty
+          // parser wrappers. Never cross an accordion or summary boundary.
+          var node = element;
+          while (node && node !== doc) {
+            if (node.nextElementSibling) {
+              node = node.nextElementSibling;
+            } else {
+              var parent = node.parentElement;
+              if (!parent || parent === doc || parent.tagName.toLowerCase() === 'summary') return null;
+              if (parent.tagName.toLowerCase() === 'details' && node !== parent.querySelector('summary')) return null;
+              node = parent;
+              continue;
+            }
+            if (node.tagName && /^(summary|details)$/.test(node.tagName.toLowerCase())) return null;
+            if (/^H[1-6]$/.test(node.tagName || '')) return node;
+            if (isEmptyAnchorWrapper(node)) continue;
+            return null;
+          }
+          return null;
+        }
+        if (!summary && !heading && anchorElement) {
+          heading = nextMeaningfulElement(anchorElement);
+        }
+
+        // An empty anchor may be placed immediately before a <details>
+        // block (rather than inside it). In that layout the anchor has no
+        // visible box and is outside the details subtree, so neither the
+        // summary lookup above nor the details-body fallback can find the
+        // visible destination. Walk forward through only empty Markdown
+        // wrappers and use the following details' summary as the destination.
+        function nextDetailsSummary(element) {
+          var node = element;
+          while (node && node !== doc) {
+            if (node.nextElementSibling) {
+              node = node.nextElementSibling;
+            } else {
+              var parent = node.parentElement;
+              if (!parent || parent === doc || parent.tagName.toLowerCase() === 'details' ||
+                  parent.tagName.toLowerCase() === 'summary') return null;
+              node = parent;
+              continue;
+            }
+            if (node.tagName && node.tagName.toLowerCase() === 'details') {
+              return node.querySelector(':scope > summary');
+            }
+            if (isEmptyAnchorWrapper(node)) continue;
+            return null;
+          }
+          return null;
+        }
+        if (!summary && !heading && anchorElement) {
+          summary = nextDetailsSummary(anchorElement);
+        }
+
+        // An anchor immediately after </summary> on the same source line is
+        // rendered as the first node of the details body. In that specific
+        // case the visible destination is the summary, not the empty anchor.
+        if (!summary && detailsRoot && anchorElement) {
+          var body = detailsRoot.querySelector('.md-details-content') || detailsRoot;
+          var preceding = anchorElement;
+          var firstBodyTarget = true;
+          while (preceding && preceding !== body) {
+            if (preceding.previousElementSibling) {
+              preceding = preceding.previousElementSibling;
+              if (!isEmptyAnchorWrapper(preceding)) { firstBodyTarget = false; break; }
+            } else {
+              preceding = preceding.parentElement;
+            }
+          }
+          if (firstBodyTarget && body.contains(anchorElement)) {
+            var summaryElement = detailsRoot.querySelector(':scope > summary');
+            if (summaryElement) summary = summaryElement;
+          }
+        }
+
+        // Highlight a visible destination. Empty anchors themselves have no
+        // visible area, so prefer their associated heading/summary/container.
+        var destination = summary || heading ||
+          (target.closest && target.closest('p, li, blockquote, td, th')) || target;
+
+        var getObscuredTop = function() {
+          var bottom = 0;
+          var topbar = document.querySelector('.topbar');
+          if (topbar) {
+            var topbarStyle = window.getComputedStyle(topbar);
+            var topbarRect = topbar.getBoundingClientRect();
+            if (topbarStyle.position === 'fixed' && topbarStyle.display !== 'none' && topbarStyle.visibility !== 'hidden') {
+              bottom = Math.max(bottom, topbarRect.bottom);
+            }
+          }
+          var toolbar = document.querySelector('.reading-toolbar');
+          if (toolbar) {
+            var toolbarStyle = window.getComputedStyle(toolbar);
+            var toolbarRect = toolbar.getBoundingClientRect();
+            if (toolbarStyle.display !== 'none' && toolbarStyle.visibility !== 'hidden') {
+              // The current stylesheet overrides .reading-toolbar to
+              // position: fixed. Handle both fixed and sticky layouts; the
+              // previous sticky-only check ignored the actual fixed toolbar,
+              // allowing anchor targets to land underneath it.
+              if (toolbarStyle.position === 'fixed' ||
+                  (toolbarStyle.position === 'sticky' && toolbarRect.top <= bottom + 2)) {
+                bottom = Math.max(bottom, toolbarRect.bottom);
+              }
+            }
+          }
+          return bottom;
+        };
+        // Opening <details> can change layout. Measure only after the browser
+        // has applied that layout, then make one position-based scroll. Do not
+        // use scrollIntoView/scroll-margin here: the fixed topbar and sticky
+        // toolbar are both part of the occlusion calculation.
+        requestAnimationFrame(function() {
+          var destinationRect = destination.getBoundingClientRect();
+          var obscuredTop = getObscuredTop();
+          var gap = 16;
+          var targetScrollTop = window.scrollY + destinationRect.top - obscuredTop - gap;
+          window.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'auto' });
+
+          // Highlight the same visible element that was used for positioning.
+          destination.classList.remove('anchor-target-highlight');
+          void destination.offsetWidth;
+          destination.classList.add('anchor-target-highlight');
+          if (destination._anchorHighlightTimer) clearTimeout(destination._anchorHighlightTimer);
+          destination._anchorHighlightTimer = setTimeout(function() {
+            destination.classList.remove('anchor-target-highlight');
+            destination._anchorHighlightTimer = null;
+          }, 1800);
+        });
+        return;
+      }
+      if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
+        event.preventDefault();
+        if (M.vscode) M.vscode.postMessage({ type: 'openExternal', url: href });
+        else window.open(href, '_blank', 'noopener,noreferrer');
+      }
+    });
+  }
   var renderSequence = 0;
   var activeRender = Promise.resolve();
   var renderedDocumentUri = null;
@@ -1282,6 +1453,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
         });
         if (request !== renderSequence) return;
         doc.innerHTML = M.renderMarkdown(text);
+        installDocumentLinkNavigation(doc);
         if (M.enhanceCodeBlocks) M.enhanceCodeBlocks(doc);
         document.querySelector('.filename').textContent = name;
         document.getElementById('status').textContent = text.length.toLocaleString() + '文字';

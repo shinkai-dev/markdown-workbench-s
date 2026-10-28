@@ -9,9 +9,8 @@ window.MarkdownViewer = window.MarkdownViewer || {};
     panel.classList.add('open');
     var input = panel.querySelector('input');
     input.focus();
-    input.select();
-    // Opening the panel must not rerun a previous query. Search starts only
-    // when the user changes the input; closing the panel clears prior results.
+    // Keep the previous query visible, but do not rerun it on open. Search
+    // starts again only when the user edits the retained value.
     results = [];
     index = -1;
     updateMeta();
@@ -20,10 +19,8 @@ window.MarkdownViewer = window.MarkdownViewer || {};
   M.closeSearch = function () {
     if (panel) {
       panel.classList.remove('open');
-      // Do not carry a stale query into the next opening. The panel opens
-      // idle, and the next user input starts a fresh immediate search.
-      var input = panel.querySelector('input');
-      if (input) input.value = '';
+      // Retain the query for the next opening; results and highlights are
+      // cleared so reopening remains idle until the query is edited.
     }
     clearHighlights();
     results = [];
@@ -182,7 +179,15 @@ window.MarkdownViewer = window.MarkdownViewer || {};
   }
 
   function move(delta) {
-    if (!results.length) return;
+    // Closing the panel clears highlights/results but intentionally retains the
+    // query. If the user reopens search and presses next/previous without
+    // editing that query, rebuild the results on demand instead of doing nothing.
+    if (!results.length) {
+      var input = panel && panel.querySelector('input');
+      if (input && input.value) runSearch();
+      if (!results.length) return;
+      return; // runSearch selects and scrolls to the first match.
+    }
     index = (index + delta + results.length) % results.length;
     setCurrent(true);
   }
