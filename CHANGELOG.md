@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.9
+
+- Fixed wrapping for long unbroken text in Markdown prose, tables, and the table of contents while preserving code-block wrapping controls.
+- Fixed blank / non-blank filter conditions so they are included when applying a column filter.
+- Prevented Markdown column headings from being interpreted as HTML in the filter popover.
+- Limited the initial filter value list to 500 entries and added value search for high-cardinality columns.
+- Added Japanese and English labels for filter value search and truncated-value notices.
+- Added preview restoration, host-side settings and CSV export support, and related extension configuration.
+
 ## 1.2.8
 
 - Increased accordion `<summary>` title font size to `1.25em` and added a subtle bottom margin to improve visual distinction and readability.

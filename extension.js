@@ -1,8 +1,46 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
-function prepareMarkdownForWebview(text, documentUri, webview) {
+const crypto = require('crypto');
+
+const MD_EXTS = ['.md', '.markdown', '.mdown', '.mkdn', '.txt'];
+const IMG_EXT_RE = /\.(png|jpe?g|gif|svg|webp|bmp|ico|avif)$/i;
+const SETTING_MAP = {
+  theme: 'preview.theme', fontSize: 'preview.fontSize', lineHeight: 'preview.lineHeight',
+  docWidth: 'preview.contentWidth', language: 'preview.language'
+};
+
+function cfg() { return vscode.workspace.getConfiguration('markdownWorkbenchS'); }
+function uiLang() {
+  const l = cfg().get('preview.language', 'auto');
+  if (l === 'ja' || l === 'en') return l;
+  return String(vscode.env.language || 'en').toLowerCase().startsWith('ja') ? 'ja' : 'en';
+}
+function L(en, ja) { return uiLang() === 'ja' ? ja : en; }
+function readSettings() {
+  const c = cfg();
+  return {
+    theme: c.get('preview.theme', 'dark'),
+    fontSize: c.get('preview.fontSize', 16),
+    lineHeight: c.get('preview.lineHeight', 1.85),
+    docWidth: c.get('preview.contentWidth', 1000),
+    language: uiLang()
+  };
+}
+function blockedImagePlaceholder(originalUrl) {
+  const label = L('Remote image blocked', 'リモート画像はブロック中');
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="64">' +
+    '<rect width="360" height="64" rx="6" fill="#88888822" stroke="#88888866"/>' +
+    '<text x="12" y="26" font-family="system-ui,sans-serif" font-size="13" fill="#888">' + label + '</text>' +
+    '<text x="12" y="46" font-family="system-ui,sans-serif" font-size="11" fill="#888">' +
+    String(originalUrl).slice(0, 60).replace(/[<>&"]/g, '') + '</text></svg>';
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+function prepareMarkdownForWebview(text, documentUri, webview, allowRemoteImages) {
   const source = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // Fast path: nothing image-like in the document -> no per-line work on the host.
+  if (!/\]\(|<img|\]:/i.test(source)) return source;
   const documentDir = path.dirname(documentUri.fsPath);
   const lines = source.split('\n');
   let fenceChar = '';
@@ -13,7 +51,6 @@ function prepareMarkdownForWebview(text, documentUri, webview) {
     for (let i = index - 1; i >= 0 && value.charAt(i) === '\\'; i--) count++;
     return (count % 2) === 1;
   }
-
   function findUnescaped(value, start, needle) {
     let pos = start;
     while ((pos = value.indexOf(needle, pos)) >= 0) {
@@ -22,49 +59,32 @@ function prepareMarkdownForWebview(text, documentUri, webview) {
     }
     return -1;
   }
-
   function findImageLabelEnd(value, start) {
     let depth = 0;
     for (let i = start; i < value.length; i++) {
       if (isEscaped(value, i)) continue;
       const ch = value.charAt(i);
       if (ch === '[') depth++;
-      else if (ch === ']') {
-        if (depth === 0) return i;
-        depth--;
-      }
+      else if (ch === ']') { if (depth === 0) return i; depth--; }
     }
     return -1;
   }
-
   function findDestinationEnd(value, openIndex) {
-    let depth = 0;
-    let quote = '';
+    let depth = 0, quote = '';
     for (let i = openIndex + 1; i < value.length; i++) {
       if (isEscaped(value, i)) continue;
       const ch = value.charAt(i);
-      if (quote) {
-        if (ch === quote) quote = '';
-        continue;
-      }
-      if (ch === '"' || ch === "'") {
-        quote = ch;
-        continue;
-      }
+      if (quote) { if (ch === quote) quote = ''; continue; }
+      if (ch === '"' || ch === "'") { quote = ch; continue; }
       if (ch === '(') depth++;
-      else if (ch === ')') {
-        if (depth === 0) return i;
-        depth--;
-      }
+      else if (ch === ')') { if (depth === 0) return i; depth--; }
     }
     return -1;
   }
-
   function splitDestination(raw) {
     const value = String(raw || '').trim();
     if (!value) return null;
-    let url = value;
-    let title = '';
+    let url = value, title = '';
     if (value.charAt(0) === '<') {
       const close = findUnescaped(value, 1, '>');
       if (close < 0) return null;
@@ -83,17 +103,40 @@ function prepareMarkdownForWebview(text, documentUri, webview) {
     title = m[2] != null ? m[2] : (m[3] != null ? m[3] : (m[4] != null ? m[4] : ''));
     return { url: m[1], title, titleStyle: m[2] != null ? '"' : (m[3] != null ? "'" : (m[4] != null ? '(' : '')) };
   }
-
+  // Returns a replacement URL, or null to leave the destination unchanged.
+  function mapDestination(rawUrl) {
+    const cleanUrl = String(rawUrl || '').trim();
+    if (!cleanUrl) return null;
+    if (/^(?:https?:|\/\/)/i.test(cleanUrl)) {
+      return allowRemoteImages ? null : blockedImagePlaceholder(cleanUrl);
+    }
+    if (/^(?:data:|vscode-webview-resource:)/i.test(cleanUrl)) return null;
+    try {
+      let urlPath = cleanUrl;
+      if (/^file:/i.test(urlPath)) urlPath = vscode.Uri.parse(urlPath).fsPath;
+      const suffixMatch = urlPath.match(/[?#][\s\S]*$/);
+      let pathPart = suffixMatch ? urlPath.slice(0, suffixMatch.index) : urlPath;
+      const urlSuffix = suffixMatch ? urlPath.slice(suffixMatch.index) : '';
+      // FIX: percent-encoded destinations (my%20image.png, encoded CJK names)
+      // must be decoded before resolving against the document directory.
+      try { pathPart = decodeURIComponent(pathPart); } catch (_) { /* keep raw */ }
+      const localPath = path.isAbsolute(pathPart) ? pathPart : path.resolve(documentDir, pathPart);
+      return webview.asWebviewUri(vscode.Uri.file(localPath)).toString() + urlSuffix;
+    } catch (_) { return null; }
+  }
+  function rewriteImgTag(tag) {
+    const m = tag.match(/(\bsrc\s*=\s*)("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    if (!m) return tag;
+    const original = m[3] != null ? m[3] : (m[4] != null ? m[4] : m[5]);
+    const mapped = mapDestination(original);
+    if (mapped == null) return tag;
+    const attrSafe = mapped.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    return tag.slice(0, m.index) + m[1] + '"' + attrSafe + '"' + tag.slice(m.index + m[0].length);
+  }
   function rewriteImages(line) {
-    let out = '';
-    let i = 0;
-    let codeRun = 0;
+    let out = '', i = 0, codeRun = 0;
     while (i < line.length) {
-      if (line.charAt(i) === '\\' && i + 1 < line.length) {
-        out += line.slice(i, i + 2);
-        i += 2;
-        continue;
-      }
+      if (line.charAt(i) === '\\' && i + 1 < line.length) { out += line.slice(i, i + 2); i += 2; continue; }
       if (line.charAt(i) === '`') {
         let run = 1;
         while (line.charAt(i + run) === '`') run++;
@@ -101,307 +144,138 @@ function prepareMarkdownForWebview(text, documentUri, webview) {
         const close = findUnescaped(line, i + run, fence);
         if (codeRun === 0 && close >= 0) codeRun = run;
         else if (codeRun === run) codeRun = 0;
-        out += line.slice(i, i + run);
-        i += run;
-        continue;
+        out += line.slice(i, i + run); i += run; continue;
       }
-      if (codeRun || line.slice(i, i + 2) !== '![') {
-        out += line.charAt(i);
-        i++;
-        continue;
+      // FIX: raw HTML <img src="relative/path"> is now rewritten too.
+      if (!codeRun && /^<img\b/i.test(line.slice(i)) && (i === 0 || /[\s(]/.test(line.charAt(i - 1)))) {
+        const end = line.indexOf('>', i);
+        if (end >= 0) {
+          const tag = line.slice(i, end + 1);
+          out += rewriteImgTag(tag); i = end + 1; continue;
+        }
       }
+      if (codeRun || line.slice(i, i + 2) !== '![') { out += line.charAt(i); i++; continue; }
       const labelStart = i + 2;
       const labelEnd = findImageLabelEnd(line, labelStart);
-      if (labelEnd < 0 || line.charAt(labelEnd + 1) !== '(') {
-        out += line.charAt(i);
-        i++;
-        continue;
-      }
+      if (labelEnd < 0 || line.charAt(labelEnd + 1) !== '(') { out += line.charAt(i); i++; continue; }
       const destinationEnd = findDestinationEnd(line, labelEnd + 1);
-      if (destinationEnd < 0) {
-        out += line.charAt(i);
-        i++;
-        continue;
-      }
+      if (destinationEnd < 0) { out += line.charAt(i); i++; continue; }
       const destination = splitDestination(line.slice(labelEnd + 2, destinationEnd));
-      if (!destination) {
-        out += line.slice(i, destinationEnd + 1);
-        i = destinationEnd + 1;
-        continue;
+      if (!destination) { out += line.slice(i, destinationEnd + 1); i = destinationEnd + 1; continue; }
+      const mapped = mapDestination(destination.url);
+      if (mapped == null) { out += line.slice(i, destinationEnd + 1); i = destinationEnd + 1; continue; }
+      let titlePart = '';
+      if (destination.title) {
+        const style = destination.titleStyle || '"';
+        titlePart = ` ${style}${destination.title}${style === '(' ? ')' : style}`;
+      } else if (!allowRemoteImages && /^(?:https?:|\/\/)/i.test(destination.url)) {
+        titlePart = ` "${String(destination.url).replace(/"/g, '%22')}"`;
       }
-      const cleanUrl = String(destination.url || '');
-      if (/^(?:https?:|data:|vscode-webview-resource:|\/\/)/i.test(cleanUrl)) {
-        out += line.slice(i, destinationEnd + 1);
-        i = destinationEnd + 1;
-        continue;
-      }
-      try {
-        const suffixMatch = cleanUrl.match(/[?#][\s\S]*$/);
-        const pathPart = suffixMatch ? cleanUrl.slice(0, suffixMatch.index) : cleanUrl;
-        const urlSuffix = suffixMatch ? cleanUrl.slice(suffixMatch.index) : '';
-        const localPath = path.resolve(documentDir, pathPart);
-        const resourceUri = webview.asWebviewUri(vscode.Uri.file(localPath)).toString() + urlSuffix;
-        let titlePart = '';
-        if (destination.title) {
-          const style = destination.titleStyle || '"';
-          titlePart = ` ${style}${destination.title}${style === '(' ? ')' : style}`;
-        }
-        out += `![${line.slice(labelStart, labelEnd)}](${resourceUri}${titlePart})`;
-      } catch (_) {
-        out += line.slice(i, destinationEnd + 1);
-      }
+      out += `![${line.slice(labelStart, labelEnd)}](${mapped}${titlePart})`;
       i = destinationEnd + 1;
     }
     return out;
+  }
+  // FIX: reference-style image definitions ([ref]: images/pic.png) are rewritten
+  // when the destination looks like an image file. Link definitions are untouched.
+  function rewriteReferenceDefinition(line) {
+    const m = line.match(/^( {0,3}\[[^\]\n]+\]:[ \t]*)(<[^>\n]*>|\S+)([ \t][\s\S]*)?$/);
+    if (!m) return line;
+    let dest = m[2];
+    const angled = dest.charAt(0) === '<';
+    if (angled) dest = dest.slice(1, -1);
+    let decoded = dest;
+    try { decoded = decodeURIComponent(dest); } catch (_) { /* keep raw */ }
+    if (!IMG_EXT_RE.test(decoded.split(/[?#]/)[0])) return line;
+    const mapped = mapDestination(dest);
+    if (mapped == null) return line;
+    return m[1] + mapped + (m[3] || '');
   }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (fenceChar) {
-      lines[i] = line;
       const close = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
-      if (close && close[1].charAt(0) === fenceChar && close[1].length >= fenceLength) {
-        fenceChar = '';
-        fenceLength = 0;
-      }
+      if (close && close[1].charAt(0) === fenceChar && close[1].length >= fenceLength) { fenceChar = ''; fenceLength = 0; }
       continue;
     }
     const fence = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (fence && !(fence[1].charAt(0) === '`' && fence[2].indexOf('`') >= 0)) {
-      fenceChar = fence[1].charAt(0);
-      fenceLength = fence[1].length;
-      lines[i] = line;
-      continue;
+      fenceChar = fence[1].charAt(0); fenceLength = fence[1].length; continue;
     }
-    if (/^(?: {4}|\t)/.test(line)) {
-      lines[i] = line;
-      continue;
-    }
-    lines[i] = rewriteImages(line);
+    if (/^(?: {4}|\t)/.test(line)) continue;
+    const defRewritten = rewriteReferenceDefinition(line);
+    lines[i] = defRewritten !== line ? defRewritten : rewriteImages(line);
   }
   return lines.join('\n');
 }
 
 function activate(context) {
-  let panel = null;
-  let currentUri = null;
-  let mermaidPanels = new Set();
-  let lastSentDocumentVersion = - 1;
-  let webviewReady = false;
-  let documentChangeTimer = null;
-  let prepareSequence = 0;
-  const pendingPrepare = new Map();
-  const getSourceViewColumn =(uri) => {
-    if ( ! uri) return null;
+  const records = new Map(); // uri.toString() -> record (one preview panel per document)
+  const mermaidPanels = new Set();
+
+  const getSourceViewColumn = (uri) => {
+    if (!uri) return null;
     const target = uri.toString();
-    for (const group of vscode.window.tabGroups.all) {
+    // Prefer the active group when the same file is open in several groups.
+    const groups = vscode.window.tabGroups.all.slice().sort((a, b) => (b.isActive ? 1 : 0) - (a.isActive ? 1 : 0));
+    for (const group of groups) {
       for (const tab of group.tabs) {
         const input = tab.input;
-        if (input && input.uri && input.uri.toString() === target) {
-          return group.viewColumn;
-        }
+        if (input && input.uri && input.uri.toString() === target) return group.viewColumn;
       }
     }
     return null;
   };
-  const syncPreviewToSourceGroup =() => {
-    if ( ! panel || ! currentUri || ! panel.visible) return false;
-    const sourceColumn = getSourceViewColumn(currentUri);
-    if ( ! sourceColumn || panel.viewColumn === sourceColumn) return false;
-    panel.reveal(sourceColumn, true);
+  const followSource = () => !!cfg().get('preview.followSourceGroup', false);
+  const syncPreviewToSourceGroup = (rec) => {
+    if (!followSource()) return false; // side-by-side preview is allowed by default
+    if (!rec.panel || !rec.panel.visible) return false;
+    const sourceColumn = getSourceViewColumn(rec.uri);
+    if (!sourceColumn || rec.panel.viewColumn === sourceColumn) return false;
+    rec.panel.reveal(sourceColumn, true);
     return true;
   };
-  const openPreview = async(resource) => {
-    const editor = vscode.window.activeTextEditor;
-    const uri = resource ||(editor && editor.document.uri) || currentUri;
-    if ( ! uri) {
-      vscode.window.showInformationMessage('Open a Markdown file before running this command.');
-      return;
-    }
-    const ext = path.extname(uri.fsPath).toLowerCase();
-    if ( !['.md', '.markdown', '.mdown', '.mkdn', '.txt'].includes(ext)) {
-      vscode.window.showInformationMessage('Markdown Workbench S supports Markdown and TXT files.');
-      return;
-    }
-    const sameDocument = ! !(panel && currentUri && currentUri.toString() === uri.toString());
-    const creatingPanel = ! panel;
-    currentUri = uri;
-    const column = editor ? editor.viewColumn: vscode.ViewColumn.Active;
-    if ( ! panel) {
-      panel = vscode.window.createWebviewPanel('markdownWorkbenchS', path.basename(uri.fsPath), {
-        viewColumn: column || vscode.ViewColumn.Active, preserveFocus: true
-      }, {
-        enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.file(path.join(context.extensionPath, 'webview')), vscode.Uri.file(path.dirname(uri.fsPath)), ...(vscode.workspace.workspaceFolders ||[]).map(folder => folder.uri)]
-      });
-      panel.iconPath = vscode.Uri.file(path.join(context.extensionPath, 'webview', 'assets', 'binoculars.svg'));
-      panel.onDidDispose(() => {
-        panel = null;
-        currentUri = null;
-        lastSentDocumentVersion = - 1;
-        webviewReady = false;
-        if (documentChangeTimer) {
-          clearTimeout(documentChangeTimer);
-          documentChangeTimer = null;
-        }
-        pendingPrepare.forEach(resolve => resolve());
-        pendingPrepare.clear();
-      }, null, context.subscriptions);
-      panel.onDidChangeViewState(async event => {
-        if ( ! panel || ! currentUri || ! event.webviewPanel.visible || ! webviewReady) return;
-        // A retained Webview can remain in the editor group where it was
-        // created even after the Markdown source tab is activated in another
-        // group. Synchronize the Webview's group first. This is a layout fix,
-        // not a render operation: when a move is required, return immediately
-        // and let the follow-up view-state event finish the normal refresh.
-        if (syncPreviewToSourceGroup()) return;
-        // revealSource() prepares the retained Webview BEFORE switching to the
-        // Markdown editor. Do not send prepareRender here: doing so after the
-        // Webview becomes visible is exactly what allowed the old document to
-        // paint briefly in the top-left before the loading curtain arrived.
-        const refreshed = await sendDocument(false);
-        if ( ! refreshed && panel) panel.webview.postMessage({
-          type: 'renderReady'
-        });
-      }, null, context.subscriptions);
-      panel.webview.onDidReceiveMessage(async message => {
-        if (message.type === 'ready') {
-          webviewReady = true;
-          await sendDocument(true);
-        } else if (message.type === 'viewActivated') {
-          if ( ! panel || ! currentUri || ! panel.visible) return;
-          if (syncPreviewToSourceGroup()) return;
-          const refreshed = await sendDocument(false);
-          if ( ! refreshed && panel) panel.webview.postMessage({
-            type: 'renderReady'
-          });
-        } else if (message.type === 'renderPrepared') {
-          const waiter = pendingPrepare.get(message.requestId);
-          if (waiter) {
-            pendingPrepare.delete(message.requestId);
-            waiter();
-          }
-        } else if (message.type === 'openExternal') {
-          const rawUrl = typeof message.url === 'string' ? message.url : '';
-          try {
-            const uri = vscode.Uri.parse(rawUrl);
-            if (['http', 'https', 'mailto'].includes(uri.scheme)) await vscode.env.openExternal(uri);
-          } catch (error) {
-            console.warn('Unable to open external Markdown link:', error);
-          }
-        } else if (message.type === 'openSource') {
-          await revealSource(message.line || 1, message.column || 1);
-        } else if (message.type === 'openMermaid') {
-          openMermaidDiagram(message.svg || '', message.language || 'en', message.theme || 'light');
-        }
-      }, null, context.subscriptions);
-    } else {
-      panel.reveal(column || vscode.ViewColumn.Active, true);
-    }
-    panel.title = path.basename(uri.fsPath);
-    panel.iconPath = vscode.Uri.file(path.join(context.extensionPath, 'webview', 'assets', 'binoculars.svg'));
-    if (sameDocument) {
-      // Reusing an already-rendered preview must not recreate the Webview.
-      // When the source document has not changed, keep the current preview
-      // state (table filters/sort, scroll position, Mermaid state, etc.).
-      // If the source changed while the editor was active, sendDocument()
-      // compares document.version and updates the preview only when needed.
-      await sendDocument();
-    } else if (creatingPanel) {
-      // The first Webview must load its HTML before any document message is
-      // sent. The Webview script sends the ready message after it is installed;
-      // the ready handler then performs the first render. Posting the document
-      // immediately here can otherwise lose the message and leave the spinner
-      // visible forever.
-      lastSentDocumentVersion = - 1;
-      panel.webview.html = getWebviewHtml(context, panel.webview);
-    } else {
-      // Reuse the existing Webview instead of replacing its HTML. Replacing
-      // webview.html and immediately posting the document can race the new
-      // Webview script's ready message, leaving the loading screen up forever.
-      // The existing Webview already has all rendering code, so changing the
-      // document is safely handled as an ordinary document message.
-      lastSentDocumentVersion = - 1;
-      panel.webview.postMessage({
-        type: 'prepareRender'
-      });
-      await sendDocument(true);
-    }
+  const postSettings = (rec) => {
+    if (rec.panel) rec.panel.webview.postMessage({ type: 'settings', settings: readSettings() });
   };
-  const sendDocument = async(force = false) => {
-    if ( ! panel || ! currentUri) return;
+  const sendDocument = async (rec, force = false) => {
+    if (!rec.panel) return false;
     try {
-      const doc = await vscode.workspace.openTextDocument(currentUri);
-      if ( ! force && doc.version === lastSentDocumentVersion) return false;
-      lastSentDocumentVersion = doc.version;
-      await panel.webview.postMessage({
-        type: 'document', text: prepareMarkdownForWebview(doc.getText(), doc.uri, panel.webview), name: path.basename(doc.uri.fsPath), uri: doc.uri.toString()
+      const doc = await vscode.workspace.openTextDocument(rec.uri);
+      if (!force && doc.version === rec.lastVersion) return false;
+      rec.lastVersion = doc.version;
+      await rec.panel.webview.postMessage({
+        type: 'document',
+        text: prepareMarkdownForWebview(doc.getText(), doc.uri, rec.panel.webview, (vscode.workspace.isTrusted && !!cfg().get('security.allowRemoteImages', false))),
+        name: path.basename(doc.uri.fsPath),
+        uri: doc.uri.toString()
       });
       return true;
     } catch (e) {
-      vscode.window.showErrorMessage(`Failed to load Markdown: ${e.message}`);
+      vscode.window.showErrorMessage(L(`Failed to load Markdown: ${e.message}`, `Markdownの読み込みに失敗しました: ${e.message}`));
       return false;
     }
   };
-  const openMermaidDiagram =(svg, language, theme) => {
-    if ( ! svg) {
-      vscode.window.showInformationMessage(language === 'ja' ? 'Mermaid図を表示できません。': 'The Mermaid diagram could not be displayed.');
-      return;
-    }
-    // Keep the Mermaid view in the same editor group as the Markdown preview.
-    // ViewColumn.Beside creates a split editor group, which is not what we want.
-    const previewColumn = panel && panel.viewColumn ? panel.viewColumn: vscode.ViewColumn.Active;
-    const mermaidPanel = vscode.window.createWebviewPanel('markdownWorkbenchSMermaid', language === 'ja' ? 'Mermaid図': 'Mermaid Diagram', {
-      viewColumn: previewColumn, preserveFocus: false
-    }, {
-      enableScripts: true, retainContextWhenHidden: true
-    });
-    mermaidPanels.add(mermaidPanel);
-    mermaidPanel.onDidDispose(() => mermaidPanels.delete(mermaidPanel), null, context.subscriptions);
-    mermaidPanel.webview.html = getMermaidWebviewHtml(mermaidPanel.webview, svg, language, theme);
-    mermaidPanel.reveal(previewColumn, false);
-  };
-  const preparePreviewForNavigation = async() => {
-    if ( ! panel) return;
-    const requestId = ++prepareSequence;
+  const preparePreviewForNavigation = async (rec) => {
+    if (!rec.panel) return;
+    const requestId = ++rec.seq;
     await new Promise(resolve => {
       let settled = false;
-      const finish =() => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        pendingPrepare.delete(requestId);
-        resolve();
-      };
+      const finish = () => { if (settled) return; settled = true; clearTimeout(timer); rec.pending.delete(requestId); resolve(); };
       const timer = setTimeout(finish, 500);
-      pendingPrepare.set(requestId, finish);
-      panel.webview.postMessage({
-        type: 'prepareRender', requestId
-      });
+      rec.pending.set(requestId, finish);
+      rec.panel.webview.postMessage({ type: 'prepareRender', requestId });
     });
   };
-  const revealSource = async(line, column) => {
-    if ( ! currentUri) return;
-    const doc = await vscode.workspace.openTextDocument(currentUri);
-    // Prepare the retained Webview while it is still visible. Waiting for the
-    // Webview acknowledgement guarantees that the old preview is covered
-    // BEFORE VS Code activates the Markdown source tab. Without this ordering,
-    // VS Code can paint the retained preview once, then process prepareRender,
-    // producing the visible top-left flash reported when returning to preview.
-    await preparePreviewForNavigation();
-    // Let VS Code resolve the actual group that owns the source document.
-    // If the Markdown tab is already open in another editor group,
-    // showTextDocument() may activate that existing tab there even when the
-    // requested ViewColumn is different. Use the returned editor.viewColumn
-    // as the authoritative location, then move the retained Preview Webview
-    // into that same group. If the source was not open, it stays in the
-    // current Preview group and editor.viewColumn points to that group.
-    const sourceColumn = getSourceViewColumn(currentUri);
-    const requestedColumn = sourceColumn ||(panel && panel.viewColumn) || vscode.ViewColumn.Active;
-    const editor = await vscode.window.showTextDocument(doc, {
-      viewColumn: requestedColumn, preserveFocus: false, preview: false
-    });
-    if (panel && editor.viewColumn && panel.viewColumn !== editor.viewColumn) {
-      panel.reveal(editor.viewColumn, true);
+  const revealSource = async (rec, line, column) => {
+    const doc = await vscode.workspace.openTextDocument(rec.uri);
+    await preparePreviewForNavigation(rec);
+    const sourceColumn = getSourceViewColumn(rec.uri);
+    const requestedColumn = sourceColumn || (rec.panel && rec.panel.viewColumn) || vscode.ViewColumn.Active;
+    const editor = await vscode.window.showTextDocument(doc, { viewColumn: requestedColumn, preserveFocus: false, preview: false });
+    if (followSource() && rec.panel && editor.viewColumn && rec.panel.viewColumn !== editor.viewColumn) {
+      rec.panel.reveal(editor.viewColumn, true);
     }
     const safeLine = Math.max(0, Math.min(line - 1, doc.lineCount - 1));
     const safeColumn = Math.max(0, Math.min(column - 1, doc.lineAt(safeLine).text.length));
@@ -409,69 +283,236 @@ function activate(context) {
     editor.selection = new vscode.Selection(pos, pos);
     editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
   };
-  context.subscriptions.push(vscode.commands.registerCommand('markdownWorkbenchS.openPreview', openPreview));
+  const openMermaidDiagram = (rec, svg, language, theme) => {
+    if (!svg) {
+      vscode.window.showInformationMessage(L('The Mermaid diagram could not be displayed.', 'Mermaid図を表示できません。'));
+      return;
+    }
+    const previewColumn = rec.panel && rec.panel.viewColumn ? rec.panel.viewColumn : vscode.ViewColumn.Active;
+    const mermaidPanel = vscode.window.createWebviewPanel('markdownWorkbenchSMermaid',
+      language === 'ja' ? 'Mermaid図' : 'Mermaid Diagram',
+      { viewColumn: previewColumn, preserveFocus: false },
+      { enableScripts: true, retainContextWhenHidden: true });
+    mermaidPanels.add(mermaidPanel);
+    mermaidPanel.onDidDispose(() => mermaidPanels.delete(mermaidPanel), null, context.subscriptions);
+    mermaidPanel.webview.html = getMermaidWebviewHtml(svg, language, theme);
+    mermaidPanel.reveal(previewColumn, false);
+  };
+  const installWatcher = (rec) => {
+    if (rec.watcher) rec.watcher.dispose();
+    // Refresh when the file changes on disk while it is not open in an editor.
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(vscode.Uri.file(path.dirname(rec.uri.fsPath)), path.basename(rec.uri.fsPath)));
+    const maybeRefresh = () => {
+      const openInEditor = vscode.workspace.textDocuments.some(d => d.uri.toString() === rec.uri.toString());
+      if (!openInEditor) sendDocument(rec, true);
+    };
+    watcher.onDidChange(maybeRefresh);
+    watcher.onDidCreate(maybeRefresh);
+    rec.watcher = watcher;
+  };
+  const cleanupRecord = (rec) => {
+    if (rec.timer) { clearTimeout(rec.timer); rec.timer = null; }
+    rec.pending.forEach(resolve => resolve());
+    rec.pending.clear();
+    if (rec.watcher) { rec.watcher.dispose(); rec.watcher = null; }
+    records.delete(rec.uri.toString());
+    rec.panel = null;
+  };
+  const wirePanel = (rec) => {
+    const panel = rec.panel;
+    panel.iconPath = vscode.Uri.file(path.join(context.extensionPath, 'webview', 'assets', 'binoculars.svg'));
+    panel.onDidDispose(() => cleanupRecord(rec), null, context.subscriptions);
+    panel.onDidChangeViewState(async event => {
+      if (!rec.panel || !event.webviewPanel.visible || !rec.ready) return;
+      if (syncPreviewToSourceGroup(rec)) return;
+      const refreshed = await sendDocument(rec, false);
+      if (!refreshed && rec.panel) rec.panel.webview.postMessage({ type: 'renderReady' });
+    }, null, context.subscriptions);
+    panel.webview.onDidReceiveMessage(async message => {
+      if (!rec.panel) return;
+      if (message.type === 'ready') {
+        rec.ready = true;
+        postSettings(rec);
+        await sendDocument(rec, true);
+      } else if (message.type === 'viewActivated') {
+        if (!rec.panel.visible) return;
+        if (syncPreviewToSourceGroup(rec)) return;
+        const refreshed = await sendDocument(rec, false);
+        if (!refreshed && rec.panel) rec.panel.webview.postMessage({ type: 'renderReady' });
+      } else if (message.type === 'renderPrepared') {
+        const waiter = rec.pending.get(message.requestId);
+        if (waiter) { rec.pending.delete(message.requestId); waiter(); }
+      } else if (message.type === 'openExternal') {
+        try {
+          const uri = vscode.Uri.parse(typeof message.url === 'string' ? message.url : '');
+          if (['http', 'https', 'mailto'].includes(uri.scheme)) await vscode.env.openExternal(uri);
+        } catch (error) { console.warn('Unable to open external Markdown link:', error); }
+      } else if (message.type === 'openSource') {
+        await revealSource(rec, message.line || 1, message.column || 1);
+      } else if (message.type === 'openMermaid') {
+        openMermaidDiagram(rec, message.svg || '', message.language || 'en', message.theme || 'light');
+      } else if (message.type === 'openRelativeLink') {
+        try {
+          let href = String(message.href || '').split('#')[0];
+          try { href = decodeURIComponent(href); } catch (_) { /* keep raw */ }
+          if (!href) return;
+          const target = vscode.Uri.file(path.resolve(path.dirname(rec.uri.fsPath), href));
+          if (MD_EXTS.includes(path.extname(target.fsPath).toLowerCase())) await openPreview(target, false);
+          else await vscode.window.showTextDocument(target, { preview: true });
+        } catch (e) {
+          vscode.window.showWarningMessage(L(`Could not open link: ${e.message}`, `リンクを開けませんでした: ${e.message}`));
+        }
+      } else if (message.type === 'updateSetting') {
+        const key = SETTING_MAP[message.key];
+        if (key) await cfg().update(key, message.value, vscode.ConfigurationTarget.Global);
+      } else if (message.type === 'exportCsv') {
+        let ok = false, cancelled = false;
+        try {
+          const safeName = String(message.name || 'table.csv').replace(/[\\/:*?"<>|]/g, '_');
+          const defaultUri = vscode.Uri.file(path.join(path.dirname(rec.uri.fsPath), safeName));
+          const target = await vscode.window.showSaveDialog({ defaultUri, filters: { CSV: ['csv'] } });
+          if (!target) cancelled = true;
+          else {
+            let csv = String(message.csv || '');
+            // Optional Excel formula-injection guard for quoted CSV fields.
+            if (cfg().get('export.guardCsvFormulas', true)) csv = csv.replace(/"(?=[=+\-@\t\r])/g, "\"'");
+            if (!csv.startsWith('\uFEFF')) csv = '\uFEFF' + csv;
+            fs.writeFileSync(target.fsPath, csv, 'utf8');
+            ok = true;
+          }
+        } catch (e) {
+          vscode.window.showErrorMessage(L(`Failed to save CSV: ${e.message}`, `CSVの保存に失敗しました: ${e.message}`));
+        }
+        if (rec.panel) rec.panel.webview.postMessage({ type: 'exportCsvResult', ok, cancelled });
+      }
+    }, null, context.subscriptions);
+    installWatcher(rec);
+  };
+  const buildPanel = (uri, panel) => {
+    const rec = { panel, uri, lastVersion: -1, ready: false, timer: null, pending: new Map(), seq: 0, watcher: null };
+    records.set(uri.toString(), rec);
+    wirePanel(rec);
+    panel.webview.html = getWebviewHtml(context, panel.webview);
+    return rec;
+  };
+  const openPreview = async (resource) => {
+    const editor = vscode.window.activeTextEditor;
+    const uri = (resource instanceof vscode.Uri) ? resource : (editor && editor.document.uri);
+    if (!uri) {
+      vscode.window.showInformationMessage(L('Open a Markdown file before running this command.', 'Markdownファイルを開いてから実行してください。'));
+      return;
+    }
+    const ext = path.extname(uri.fsPath).toLowerCase();
+    if (!MD_EXTS.includes(ext)) {
+      vscode.window.showInformationMessage(L('Markdown Workbench S supports Markdown and TXT files.', 'Markdown Workbench S は Markdown と TXT ファイルに対応しています。'));
+      return;
+    }
+    const existing = records.get(uri.toString());
+    if (existing && existing.panel) {
+      existing.panel.reveal(existing.panel.viewColumn || vscode.ViewColumn.Active, true);
+      existing.panel.title = path.basename(uri.fsPath);
+      await sendDocument(existing);
+      return;
+    }
+    const column = (editor && editor.viewColumn) || vscode.ViewColumn.Active;
+    const panel = vscode.window.createWebviewPanel('markdownWorkbenchS', path.basename(uri.fsPath),
+      { viewColumn: column, preserveFocus: true },
+      {
+        enableScripts: true, retainContextWhenHidden: true,
+        localResourceRoots: [
+          vscode.Uri.file(path.join(context.extensionPath, 'webview')),
+          vscode.Uri.file(path.dirname(uri.fsPath)),
+          ...(vscode.workspace.workspaceFolders || []).map(folder => folder.uri)
+        ]
+      });
+    buildPanel(uri, panel);
+  };
+
+  context.subscriptions.push(vscode.commands.registerCommand('markdownWorkbenchS.openPreview', r => openPreview(r)));
+  // Restore preview tabs after a window reload.
+  context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('markdownWorkbenchS', {
+    async deserializeWebviewPanel(panel, state) {
+      try {
+        const uri = state && state.uri ? vscode.Uri.parse(state.uri) : null;
+        if (!uri || !MD_EXTS.includes(path.extname(uri.fsPath).toLowerCase())) { panel.dispose(); return; }
+        panel.webview.options = {
+          enableScripts: true, retainContextWhenHidden: true,
+          localResourceRoots: [
+            vscode.Uri.file(path.join(context.extensionPath, 'webview')),
+            vscode.Uri.file(path.dirname(uri.fsPath)),
+            ...(vscode.workspace.workspaceFolders || []).map(folder => folder.uri)
+          ]
+        };
+        buildPanel(uri, panel);
+      } catch (_) { panel.dispose(); }
+    }
+  }));
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(e => {
-    if ( ! currentUri || e.document.uri.toString() !== currentUri.toString() || ! panel) return;
-    // Keep the preview live while avoiding a full Markdown render for every
-    // keystroke. A short debounce still makes normal edits feel immediate.
-    if (documentChangeTimer) clearTimeout(documentChangeTimer);
-    documentChangeTimer = setTimeout(() => {
-      documentChangeTimer = null;
-      if ( ! panel || ! currentUri) return;
-      if (e.document.version === lastSentDocumentVersion) return;
-      lastSentDocumentVersion = e.document.version;
-      panel.webview.postMessage({
-        type: 'document', text: prepareMarkdownForWebview(e.document.getText(), e.document.uri, panel.webview), name: path.basename(e.document.uri.fsPath), uri: e.document.uri.toString()
+    const rec = records.get(e.document.uri.toString());
+    if (!rec || !rec.panel) return;
+    if (rec.timer) clearTimeout(rec.timer);
+    rec.timer = setTimeout(() => {
+      rec.timer = null;
+      if (!rec.panel) return;
+      if (e.document.version === rec.lastVersion) return;
+      rec.lastVersion = e.document.version;
+      rec.panel.webview.postMessage({
+        type: 'document',
+        text: prepareMarkdownForWebview(e.document.getText(), e.document.uri, rec.panel.webview, (vscode.workspace.isTrusted && !!cfg().get('security.allowRemoteImages', false))),
+        name: path.basename(e.document.uri.fsPath),
+        uri: e.document.uri.toString()
       });
     }, 220);
   }));
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(e => {
-    if (panel && e && currentUri && e.document.uri.toString() === currentUri.toString()) {
-      sendDocument();
-    }
+    if (!e) return;
+    const rec = records.get(e.document.uri.toString());
+    if (rec && rec.panel) sendDocument(rec);
+  }));
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+    if (!e.affectsConfiguration('markdownWorkbenchS')) return;
+    records.forEach(rec => { if (rec.panel) { postSettings(rec); sendDocument(rec, true); } });
+  }));
+  context.subscriptions.push(vscode.workspace.onDidDeleteFiles(e => {
+    e.files.forEach(uri => {
+      const rec = records.get(uri.toString());
+      if (rec && rec.panel) rec.panel.dispose();
+    });
+  }));
+  context.subscriptions.push(vscode.workspace.onDidRenameFiles(e => {
+    e.files.forEach(({ oldUri, newUri }) => {
+      const rec = records.get(oldUri.toString());
+      if (!rec || !rec.panel) return;
+      records.delete(oldUri.toString());
+      rec.uri = newUri;
+      records.set(newUri.toString(), rec);
+      rec.panel.title = path.basename(newUri.fsPath);
+      installWatcher(rec);
+      sendDocument(rec, true);
+    });
   }));
 }
-function getMermaidWebviewHtml(webview, svg, language, theme) {
-  const nonce = String(Date.now()) + Math.random().toString(36).slice(2);
+
+function getMermaidWebviewHtml(svg, language, theme) {
+  const nonce = crypto.randomUUID();
   const ja = language === 'ja';
-  const title = ja ? 'Mermaid図': 'Mermaid Diagram';
-  const zoom = ja ? '倍率': 'Zoom';
-  const out = ja ? '縮小': 'Zoom out';
-  const inn = ja ? '拡大': 'Zoom in';
+  const title = ja ? 'Mermaid図' : 'Mermaid Diagram';
+  const zoom = ja ? '倍率' : 'Zoom';
+  const out = ja ? '縮小' : 'Zoom out';
+  const inn = ja ? '拡大' : 'Zoom in';
   const themeColors = {
-    light: {
-      bg: '#f7f8fb',
-      fg: '#202634',
-      border: '#dce1e8',
-      surface: '#ffffff',
-      hover: '#f1f4f8'
-    },
-    dark: {
-      bg: '#101318',
-      fg: '#e7eaf0',
-      border: '#303846',
-      surface: '#171b22',
-      hover: '#202631'
-    },
-    'high-contrast': {
-      bg: '#000000',
-      fg: '#ffffff',
-      border: '#ffffff',
-      surface: '#000000',
-      hover: '#111111'
-    }
+    light: { bg: '#f7f8fb', fg: '#202634', border: '#dce1e8', surface: '#ffffff', hover: '#f1f4f8' },
+    dark: { bg: '#101318', fg: '#e7eaf0', border: '#303846', surface: '#171b22', hover: '#202631' },
+    'high-contrast': { bg: '#000000', fg: '#ffffff', border: '#ffffff', surface: '#000000', hover: '#111111' }
   };
   const colors = themeColors[theme] || themeColors.light;
-  const bg = colors.bg;
-  const fg = colors.fg;
-  const border = colors.border;
-  const surface = colors.surface;
-  const hover = colors.hover;
-  const safeSvg = JSON.stringify(svg);
+  // FIX: escape "<" so a "</script>" inside diagram labels cannot terminate the script block.
+  const safeSvg = JSON.stringify(svg).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   return `<!doctype html><html lang="${ja ? 'ja' : 'en'}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"><title>${title}</title><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${bg};color:${fg};font-family:system-ui,sans-serif}
-.bar{position:fixed;z-index:10;top:12px;right:12px;display:flex;align-items:center;gap:6px;padding:6px;background:${surface};border:1px solid ${border};border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
-button,select{border:1px solid ${border};background:${surface};color:${fg};border-radius:6px;padding:4px 9px;font:inherit;font-size:13px;cursor:pointer}button:hover,select:hover{background:${hover}}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${colors.bg};color:${colors.fg};font-family:system-ui,sans-serif}
+.bar{position:fixed;z-index:10;top:12px;right:12px;display:flex;align-items:center;gap:6px;padding:6px;background:${colors.surface};border:1px solid ${colors.border};border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+button,select{border:1px solid ${colors.border};background:${colors.surface};color:${colors.fg};border-radius:6px;padding:4px 9px;font:inherit;font-size:13px;cursor:pointer}button:hover,select:hover{background:${colors.hover}}
 .viewport{position:absolute;inset:0;overflow:hidden;cursor:grab;touch-action:none}.viewport.dragging{cursor:grabbing}
 .stage{position:absolute;left:0;top:0;transform-origin:top left;will-change:transform}svg{display:block;max-width:none;height:auto}
 </style></head><body><div class="bar"><button id="out" type="button" title="${out}">−</button><select id="zoom" aria-label="${zoom}"><option value="0.5">50%</option><option value="0.67">67%</option><option value="0.75">75%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1" selected>100%</option><option value="1.1">110%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="1.75">175%</option><option value="2">200%</option><option value="2.5">250%</option><option value="3">300%</option></select><button id="in" type="button" title="${inn}">+</button></div><div id="viewport" class="viewport"><div id="stage" class="stage"></div></div><script nonce="${nonce}">(function(){
@@ -483,29 +524,19 @@ document.getElementById('in').onclick=function(){let i=levels.findIndex(v=>v>=sc
 viewport.addEventListener('pointerdown',e=>{if(e.button!==0)return;drag={id:e.pointerId,sx:e.clientX,sy:e.clientY,x,y};viewport.classList.add('dragging');viewport.setPointerCapture(e.pointerId);e.preventDefault()});viewport.addEventListener('pointermove',e=>{if(!drag||drag.id!==e.pointerId)return;x=drag.x+e.clientX-drag.sx;y=drag.y+e.clientY-drag.sy;render();e.preventDefault()});function end(e){if(drag&&drag.id===e.pointerId){drag=null;viewport.classList.remove('dragging')}}viewport.addEventListener('pointerup',end);viewport.addEventListener('pointercancel',end);window.addEventListener('resize',center);center();
 })();</script></body></html>`;
 }
+
 function getWebviewHtml(context, webview) {
   const root = vscode.Uri.file(path.join(context.extensionPath, 'webview'));
   const asUri = p => webview.asWebviewUri(vscode.Uri.joinPath(root, p));
-  const nonce = String(Date.now());
-  const scripts =['vendor/marked.min.js',
-  'vendor/purify.min.js',
-  'vendor/mermaid.min.js',
-  'vendor/highlight.min.js',
-  'js/storage.js',
-  'js/markdown-renderer.js',
-  'js/table-controller.js',
-  'js/mermaid-controller.js',
-  'js/toc-controller.js',
-  'js/search-controller.js',
-  'js/theme-controller.js',
-  'js/keyboard-controller.js',
-  'js/app.js'];
+  const nonce = crypto.randomUUID(); // FIX: unpredictable nonce
+  const scripts = ['vendor/marked.min.js', 'vendor/purify.min.js', 'vendor/mermaid.min.js', 'vendor/highlight.min.js',
+    'js/storage.js', 'js/markdown-renderer.js', 'js/table-controller.js', 'js/mermaid-controller.js',
+    'js/toc-controller.js', 'js/search-controller.js', 'js/theme-controller.js', 'js/keyboard-controller.js', 'js/app.js'];
   const scriptTags = scripts.map(p => `<script nonce="${nonce}" src="${asUri(p)}"></script>`).join('\n');
-  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: http: data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; worker-src blob:; font-src ${webview.cspSource} data:;"><link rel="stylesheet" href="${asUri('css/app.css')}"><link rel="stylesheet" href="${asUri('css/themes.css')}"><style>body.vscode-webview .drop-overlay{display:none}.source-nav-hint{position:fixed;right:16px;bottom:16px;z-index:1000;padding:8px 12px;border:1px solid var(--border);background:var(--panel);border-radius:6px;opacity:0;pointer-events:none;transition:opacity .15s}body.source-nav-active .source-nav-hint{opacity:1}</style></head><body class="vscode-webview"><div id="startup-loading" class="loading" role="status" aria-live="polite"><div class="loading-card" aria-hidden="true"><span class="loading-dots"><span></span><span></span><span></span></div></div><div id="app" aria-busy="false"></div><div id="toast" class="toast" role="status" aria-live="polite"></div><div class="source-nav-hint">Double-click to open the Markdown source</div><script nonce="${nonce}">window.addEventListener("error",function(e){var a=document.getElementById("app");if(a&&(!a.firstChild||a.textContent.trim()==="")){a.innerHTML="<div style=\"padding:32px;font-family:system-ui,sans-serif\"><h2>Markdown Workbench failed to start</h2><p>Webview error: "+String(e.message||"Unknown error")+"</p><p>Open the Developer Tools console for details.</p></div>";}});window.addEventListener("unhandledrejection",function(e){var a=document.getElementById("app");if(a&&(!a.firstChild||a.textContent.trim()==="")){a.innerHTML="<div style=\"padding:32px;font-family:system-ui,sans-serif\"><h2>Markdown Workbench failed to start</h2><p>Unhandled error: "+String(e.reason&&e.reason.message||e.reason||"Unknown error")+"</p></div>";}});</script>${scriptTags}</body></html>`;
+  // FIX: script-src is nonce-only. Remote images are blocked at the source level
+  // (see prepareMarkdownForWebview) so the privacy toggle works without rebuilding HTML.
+  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: http: data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; worker-src blob:; font-src ${webview.cspSource} data:;"><link rel="stylesheet" href="${asUri('css/app.css')}"><link rel="stylesheet" href="${asUri('css/themes.css')}"><style>body.vscode-webview .drop-overlay{display:none}.source-nav-hint{position:fixed;right:16px;bottom:16px;z-index:1000;padding:8px 12px;border:1px solid var(--border);background:var(--panel);border-radius:6px;opacity:0;pointer-events:none;transition:opacity .15s}body.source-nav-active .source-nav-hint{opacity:1}</style></head><body class="vscode-webview"><div id="startup-loading" class="loading" role="status" aria-live="polite"><div class="loading-card" aria-hidden="true"><span class="loading-dots"><span></span><span></span><span></span></span></div></div><div id="app" aria-busy="false"></div><div id="toast" class="toast" role="status" aria-live="polite"></div><div class="source-nav-hint">Double-click to open the Markdown source</div><script nonce="${nonce}">window.addEventListener("error",function(e){var a=document.getElementById("app");if(a&&(!a.firstChild||a.textContent.trim()==="")){a.innerHTML="<div style=\\"padding:32px;font-family:system-ui,sans-serif\\"><h2>Markdown Workbench failed to start</h2><p>Webview error: "+String(e.message||"Unknown error")+"</p><p>Open the Developer Tools console for details.</p></div>";}});window.addEventListener("unhandledrejection",function(e){var a=document.getElementById("app");if(a&&(!a.firstChild||a.textContent.trim()==="")){a.innerHTML="<div style=\\"padding:32px;font-family:system-ui,sans-serif\\"><h2>Markdown Workbench failed to start</h2><p>Unhandled error: "+String(e.reason&&e.reason.message||e.reason||"Unknown error")+"</p></div>";}});</script>${scriptTags}</body></html>`;
 }
-function deactivate() {
-}
-module.exports = {
-  activate,
-  deactivate
-};
+
+function deactivate() { }
+module.exports = { activate, deactivate };

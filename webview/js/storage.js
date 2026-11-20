@@ -23,6 +23,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
     } catch (e) {
       if (M.notify) M.notify('Failed to save settings')
     }
+    if (M.vscode && M.onSettingsChanged) M.onSettingsChanged(M.settings);
   };
   M.loadSettings()
 })(window.MarkdownViewer);

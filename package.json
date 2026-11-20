@@ -2,7 +2,7 @@
   "name": "markdown-workbench-s",
   "displayName": "Markdown Workbench S",
   "description": "A feature-rich Markdown preview extension for VS Code with powerful table filtering, sorting, column tools, Mermaid, TOC, search, and source navigation.",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "publisher": "Shinkai",
   "license": "MIT",
   "engines": {
@@ -13,7 +13,7 @@
     "Visualization"
   ],
   "activationEvents": [
-    "onCommand:markdownWorkbenchS.openPreview"
+    "onWebviewPanel:markdownWorkbenchS"
   ],
   "main": "extension.js",
   "contributes": {
@@ -52,6 +52,76 @@
           "group": "navigation"
         }
       ]
+    },
+    "keybindings": [
+      {
+        "command": "markdownWorkbenchS.openPreview",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "when": "editorTextFocus && (editorLangId == markdown || resourceExtname == .markdown || resourceExtname == .mdown || resourceExtname == .mkdn)"
+      }
+    ],
+    "configuration": {
+      "title": "Markdown Workbench S",
+      "properties": {
+        "markdownWorkbenchS.preview.theme": {
+          "type": "string",
+          "enum": [
+            "system",
+            "light",
+            "dark",
+            "high-contrast"
+          ],
+          "default": "dark",
+          "description": "%config.theme%"
+        },
+        "markdownWorkbenchS.preview.fontSize": {
+          "type": "number",
+          "minimum": 12,
+          "maximum": 24,
+          "default": 16,
+          "description": "%config.fontSize%"
+        },
+        "markdownWorkbenchS.preview.lineHeight": {
+          "type": "number",
+          "minimum": 1.2,
+          "maximum": 2.5,
+          "default": 1.85,
+          "description": "%config.lineHeight%"
+        },
+        "markdownWorkbenchS.preview.contentWidth": {
+          "type": "number",
+          "minimum": 520,
+          "maximum": 1400,
+          "default": 1000,
+          "description": "%config.contentWidth%"
+        },
+        "markdownWorkbenchS.preview.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ja",
+            "en"
+          ],
+          "default": "auto",
+          "description": "%config.language%"
+        },
+        "markdownWorkbenchS.preview.followSourceGroup": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.followSourceGroup%"
+        },
+        "markdownWorkbenchS.security.allowRemoteImages": {
+          "type": "boolean",
+          "default": false,
+          "description": "Load remote (http/https) images. Off by default; remote images remain blocked in untrusted workspaces."
+        },
+        "markdownWorkbenchS.export.guardCsvFormulas": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.guardCsvFormulas%"
+        }
+      }
     }
   },
   "keywords": [
@@ -72,5 +142,15 @@
   "homepage": "https://github.com/shinkai-dev/markdown-workbench-s#readme",
   "bugs": {
     "url": "https://github.com/shinkai-dev/markdown-workbench-s/issues"
+  },
+  "capabilities": {
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Requires local file system access to resolve images and export CSV."
+    },
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Markdown is sanitized and remote images are blocked by default. Enabling remote images is disabled in untrusted workspaces."
+    }
   }
 }

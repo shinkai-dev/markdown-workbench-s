@@ -1943,3 +1943,26 @@ body.vscode-webview:not(.mv-preview-ready) #app {
 .table-scroll th.mv-column-vertical .column-actions {
   gap: 2px;
 }
+
+
+/* v1.2.9: wrap long unbroken identifiers and links in document prose. */
+.doc,
+.doc p, .doc li, .doc blockquote, .doc summary,
+.doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6,
+.doc td, .doc th,
+.toc, .toc li, .toc a {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+/* Preserve the code block's existing wrap toggle. */
+.doc pre, .doc pre code {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.doc .code-wrap.wrap-lines pre,
+.doc .code-wrap.wrap-lines code {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.filter-values-note { padding: 4px 8px; opacity: .7; font-size: 12px; }
+.filter-value-search { width: 100%; box-sizing: border-box; margin: 4px 0; }

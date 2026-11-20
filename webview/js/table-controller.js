@@ -343,7 +343,11 @@ window.MarkdownViewer = window.MarkdownViewer || {
         return a.localeCompare(b, 'ja')
       });
       var f = filters[i], title = cleanCellText(heads[i]) || '列';
-      pop.innerHTML = '<div class="filter-title" data-column-title="' + title.replace(/"/g, '&quot;') + '">' + M.t('filterTitle').replace('{title}', title) + '</div><input class="filter-input" type="search" placeholder="' + M.t('filterInput') + '"><div class="filter-special-title">' + M.t('filterSpecial') + '</div><div class="filter-special"></div><div class="filter-values-title">' + M.t('filterValues') + '</div><div class="filter-values"></div><div class="filter-actions"><button type="button" class="toolbar-btn filter-apply">' + M.t('filterApply') + '</button><button type="button" class="toolbar-btn filter-reset">' + M.t('filterReset') + '</button></div>';
+      pop.innerHTML = '<div class="filter-title"></div><input class="filter-input" type="search" placeholder="' + M.t('filterInput') + '"><div class="filter-special-title">' + M.t('filterSpecial') + '</div><div class="filter-special"></div><div class="filter-values-title">' + M.t('filterValues') + '</div><input class="filter-value-search" type="search" placeholder="' + M.t('filterValueSearch') + '"><div class="filter-values"></div><div class="filter-actions"><button type="button" class="toolbar-btn filter-apply">' + M.t('filterApply') + '</button><button type="button" class="toolbar-btn filter-reset">' + M.t('filterReset') + '</button></div>';
+      // Column names are untrusted Markdown content; assign them as text, not HTML.
+      var titleEl = pop.querySelector('.filter-title');
+      titleEl.textContent = M.t('filterTitle').replace('{title}', title);
+      titleEl.dataset.columnTitle = title;
       var input = pop.querySelector('.filter-input');
       input.value = f.text;
       var values = pop.querySelector('.filter-values');
@@ -352,27 +356,47 @@ window.MarkdownViewer = window.MarkdownViewer || {
         var label = document.createElement('label');
         label.className = 'filter-value filter-special-option';
         var cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.value = item[0];
-        cb.checked = f.values.indexOf(item[0]) >= 0;
+        cb.type = 'checkbox'; cb.value = item[0]; cb.checked = f.values.indexOf(item[0]) >= 0;
         var badge = document.createElement('span');
-        badge.className = 'filter-special-badge';
-        badge.textContent = item[1];
-        label.appendChild(cb);
-        label.appendChild(badge);
-        special.appendChild(label)
+        badge.className = 'filter-special-badge'; badge.textContent = item[1];
+        label.appendChild(cb); label.appendChild(badge); special.appendChild(label);
       });
-      vals.forEach(function(v) {
-        var label = document.createElement('label');
-        label.className = 'filter-value';
-        var cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.value = v;
-        cb.checked = f.values.indexOf(v) >= 0;
-        label.appendChild(cb);
-        label.appendChild(document.createTextNode(v));
-        values.appendChild(label)
-      });
+      // Bound DOM size for high-cardinality columns; search can reveal later values.
+      var MAX_VALUES = 500;
+      var pendingSelected = (f.values || []).slice();
+      // Keep the pending selection in sync with both checked and unchecked
+      // visible options, while retaining selections hidden by value search/cap.
+      function syncPendingSelection() {
+        values.querySelectorAll('input[type="checkbox"]').forEach(function(x) {
+          var index = pendingSelected.indexOf(x.value);
+          if (x.checked && index < 0) pendingSelected.push(x.value);
+          else if (!x.checked && index >= 0) pendingSelected.splice(index, 1);
+        });
+      }
+      function renderValueList(query) {
+        syncPendingSelection();
+        values.textContent = '';
+        var q = String(query || '').toLocaleLowerCase();
+        var matched = 0, shown = 0;
+        vals.forEach(function(v) {
+          if (q && v.toLocaleLowerCase().indexOf(q) < 0) return;
+          matched++;
+          if (shown >= MAX_VALUES) return;
+          shown++;
+          var label = document.createElement('label'); label.className = 'filter-value';
+          var cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = v;
+          cb.checked = pendingSelected.indexOf(v) >= 0;
+          cb.addEventListener('change', syncPendingSelection);
+          label.appendChild(cb); label.appendChild(document.createTextNode(v)); values.appendChild(label);
+        });
+        if (matched > shown) {
+          var note = document.createElement('div'); note.className = 'filter-values-note';
+          note.textContent = M.t('filterValuesTruncated').replace('{n}', String(matched - shown));
+          values.appendChild(note);
+        }
+      }
+      renderValueList('');
+      pop.querySelector('.filter-value-search').addEventListener('input', function() { renderValueList(this.value); });
       document.body.appendChild(pop);
       var br = button.getBoundingClientRect();
       pop.style.left = Math.min(window.innerWidth - pop.offsetWidth - 8, Math.max(8, br.left)) + 'px';
@@ -385,9 +409,11 @@ window.MarkdownViewer = window.MarkdownViewer || {
       };
       pop.querySelector('.filter-apply').onclick = function() {
         filters[i].text = input.value.trim();
-        filters[i].values = Array.from(values.querySelectorAll('input:checked')).map(function(x) {
-          return x.value
-        });
+        // Capture the latest visible checkbox state and preserve selections hidden
+        // by value search/cap, then include special-condition checkboxes.
+        syncPendingSelection();
+        var checked = Array.from(pop.querySelectorAll('.filter-special input:checked')).map(function(x) { return x.value; });
+        filters[i].values = Array.from(new Set(pendingSelected.filter(function(v) { return vals.indexOf(v) >= 0; }).concat(checked)));
         pop.remove();
         document.removeEventListener('pointerdown', closeOutside, true);
         applyFilters();
@@ -597,24 +623,12 @@ window.MarkdownViewer = window.MarkdownViewer || {
     });
     block.querySelector('[data-action="export-csv"]').addEventListener('click', function() {
       try {
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv(table)], {
-          type: 'text/csv;charset=utf-8'
-        }));
-        var d = new Date();
-        var pad = function(n) {
-          return String(n).padStart(2, '0')
-        };
-        var stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
-        a.download = stamp + '_table.csv';
-        a.click();
-        setTimeout(function() {
-          URL.revokeObjectURL(a.href)
-        }, 500);
-        M.notify(M.t('csvSaved'))
-      } catch (e) {
-        M.notify(M.t('csvSaveFailed'))
-      }
+        var blocks = Array.prototype.slice.call(document.querySelectorAll('.md-table-block'));
+        var idx = blocks.indexOf(block) + 1;
+        var fnEl = document.querySelector('.filename');
+        var base = (fnEl && fnEl.textContent ? fnEl.textContent : 'table').replace(/\.[^.]+$/, '');
+        M.exportCsv(csv(table), base + '-table-' + idx + '.csv');
+      } catch (e) { M.notify(M.t('csvSaveFailed')); }
     });
     var rightHandle = block.querySelector('.table-right-resizer'), handle = block.querySelector('.table-resize-handle'), sx, sy, sw, sh;
     rightHandle.addEventListener('pointerdown', function(ev) {

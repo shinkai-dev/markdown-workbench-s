@@ -5,9 +5,9 @@ window.MarkdownViewer = window.MarkdownViewer || {
   if (M.vscode && document.body) document.body.classList.add('mv-preview-boot');
   var I18N = {
     ja: {
-      settings: '表示設定', toc: '目次', openSidebar: 'サイドバーを開く', searchToc: '目次を検索', open: '開く', notLoaded: '未読込', loading: 'Markdownファイルを開くか、ここへドラッグ＆ドロップしてください', emptyTitle: 'Markdown Viewer', emptyText: 'Markdownファイルを開くか、ここへドラッグ＆ドロップしてください。', theme: 'テーマ', system: 'システム', light: 'ライト', dark: 'ダーク', contrast: 'ハイコントラスト', fontSize: '文字サイズ', fontSizeMinus: '−', fontSizePlus: '＋', lineHeight: '行間', documentWidth: '本文幅', language: '言語', english: 'English', japanese: '日本語', close: '閉じる', widthMinus: '−', widthPlus: '＋', empty: 'Markdownドキュメントは空です。', rendering: '描画中…', renderError: '読み込み・描画エラー', failed: '処理に失敗しました', codeCopied: 'コードをコピーしました', clipboardUnavailable: 'クリップボードを利用できません', codeCopy: 'コピー', codeWrap: '折り返し', codeCollapse: '折りたたみ', codeExpand: '展開', copyColumn: '列をコピー', tableFirstColumn: '先頭列固定', tableFirstRow: '先頭行固定', tableBoth: '両方固定', tableResetColumns: '列幅リセット', tableResetSize: '表サイズリセット', tableCopy: 'コピー', tableCsv: 'CSV', columnActions: '列の操作', filterColumn: '絞り込み', filterAllClear: 'すべて解除', sortAscending: '昇順', sortDescending: '降順', sortClear: '並べ替え解除', filterTitle: '「{title}」を絞り込み', filterInput: '文字を入力', filterSpecial: '特殊条件', filterValues: '値', filterApply: '適用', filterReset: '解除', emptyValue: '空白', nonEmptyValue: '空白以外', filteringSummary: '{active}列で絞り込み中 · {shown} / {total} 行', tableFiltered: '表を絞り込みました', columnFilterCleared: '列の絞り込みを解除しました', allTableFiltersCleared: '表の絞り込みをすべて解除しました', sortCleared: '表の並べ替えを解除しました', sortedAscending: '昇順に並べ替えました', sortedDescending: '降順に並べ替えました', columnCopied: '列をコピーしました', tableCopied: '表をコピーしました', csvSaved: 'CSVを保存しました', csvSaveFailed: 'CSV保存に失敗しました', tableWidthChanged: '表の横幅を変更しました', tableSizeChanged: '表サイズを変更しました', columnWidthResize: '列幅を変更', mermaidZoom: '倍率', mermaidZoomOut: '縮小', mermaidZoomIn: '拡大', mermaidSource: 'ソースも表示', mermaidOpen: '図だけ表示', popupBlocked: '新しいタブを開けませんでした。ポップアップを許可してください。', mermaidDiagram: 'Mermaid図', documentSearch: 'ページ内検索', searchPlaceholder: '検索語を入力', searchResults: '検索結果：{n}件', searchClose: '閉じる', searchPrevious: '前の検索結果', searchNext: '次の検索結果'
+      settings: '表示設定', toc: '目次', openSidebar: 'サイドバーを開く', searchToc: '目次を検索', open: '開く', notLoaded: '未読込', loading: 'Markdownファイルを開くか、ここへドラッグ＆ドロップしてください', emptyTitle: 'Markdown Viewer', emptyText: 'Markdownファイルを開くか、ここへドラッグ＆ドロップしてください。', theme: 'テーマ', system: 'システム', light: 'ライト', dark: 'ダーク', contrast: 'ハイコントラスト', fontSize: '文字サイズ', fontSizeMinus: '−', fontSizePlus: '＋', lineHeight: '行間', documentWidth: '本文幅', language: '言語', english: 'English', japanese: '日本語', close: '閉じる', widthMinus: '−', widthPlus: '＋', empty: 'Markdownドキュメントは空です。', characters: '{n}文字', csvExportCancelled: 'CSVの保存をキャンセルしました', rendering: '描画中…', renderError: '読み込み・描画エラー', failed: '処理に失敗しました', copied: 'コピーしました', codeCopied: 'コードをコピーしました', clipboardUnavailable: 'クリップボードを利用できません', codeCopy: 'コピー', codeWrap: '折り返し', codeCollapse: '折りたたみ', codeExpand: '展開', copyColumn: '列をコピー', tableFirstColumn: '先頭列固定', tableFirstRow: '先頭行固定', tableBoth: '両方固定', tableResetColumns: '列幅リセット', tableResetSize: '表サイズリセット', tableCopy: 'コピー', tableCsv: 'CSV', columnActions: '列の操作', filterColumn: '絞り込み', filterAllClear: 'すべて解除', sortAscending: '昇順', sortDescending: '降順', sortClear: '並べ替え解除', filterTitle: '「{title}」を絞り込み', filterInput: '文字を入力', filterSpecial: '特殊条件', filterValues: '値', filterValueSearch: '値を検索', filterValuesTruncated: '他 {n} 件は省略中（値検索で絞り込めます）', filterApply: '適用', filterReset: '解除', emptyValue: '空白', nonEmptyValue: '空白以外', filteringSummary: '{active}列で絞り込み中 · {shown} / {total} 行', tableFiltered: '表を絞り込みました', columnFilterCleared: '列の絞り込みを解除しました', allTableFiltersCleared: '表の絞り込みをすべて解除しました', sortCleared: '表の並べ替えを解除しました', sortedAscending: '昇順に並べ替えました', sortedDescending: '降順に並べ替えました', columnCopied: '列をコピーしました', tableCopied: '表をコピーしました', csvSaved: 'CSVを保存しました', csvSaveFailed: 'CSV保存に失敗しました', tableWidthChanged: '表の横幅を変更しました', tableSizeChanged: '表サイズを変更しました', columnWidthResize: '列幅を変更', mermaidZoom: '倍率', mermaidZoomOut: '縮小', mermaidZoomIn: '拡大', mermaidSource: 'ソースも表示', mermaidOpen: '図だけ表示', popupBlocked: '新しいタブを開けませんでした。ポップアップを許可してください。', mermaidDiagram: 'Mermaid図', documentSearch: 'ページ内検索', searchPlaceholder: '検索語を入力', searchResults: '検索結果：{n}件', searchClose: '閉じる', searchPrevious: '前の検索結果', searchNext: '次の検索結果'
     }, en: {
-      settings: 'Display Settings', toc: 'Table of Contents', openSidebar: 'Open sidebar', searchToc: 'Search TOC', open: 'Open', notLoaded: 'Not loaded', loading: 'Open a local Markdown file or drag and drop it here.', emptyTitle: 'Markdown Viewer', emptyText: 'Open a Markdown file or drag and drop it here.', theme: 'Theme', system: 'System', light: 'Light', dark: 'Dark', contrast: 'High Contrast', fontSize: 'Font size', fontSizeMinus: '−', fontSizePlus: '＋', lineHeight: 'Line height', documentWidth: 'Document width', language: 'Language', english: 'English', japanese: 'Japanese', close: 'Close', widthMinus: '−', widthPlus: '＋', empty: 'The Markdown document is empty.', rendering: 'Rendering…', renderError: 'Load/render error', failed: 'Operation failed.', codeCopied: 'Code copied.', clipboardUnavailable: 'Clipboard is unavailable.', codeCopy: 'Copy', codeWrap: 'Wrap', codeCollapse: 'Collapse', codeExpand: 'Expand', copyColumn: 'Copy column', tableFirstColumn: 'Freeze first column', tableFirstRow: 'Freeze header row', tableBoth: 'Freeze both', tableResetColumns: 'Reset column widths', tableResetSize: 'Reset table size', tableCopy: 'Copy', tableCsv: 'CSV', columnActions: 'Column actions', filterColumn: 'Filter', filterAllClear: 'Clear all', sortAscending: 'Sort ascending', sortDescending: 'Sort descending', sortClear: 'Clear sort', filterTitle: 'Filter “{title}”', filterInput: 'Enter text', filterSpecial: 'Special conditions', filterValues: 'Values', filterApply: 'Apply', filterReset: 'Clear', emptyValue: 'Blank', nonEmptyValue: 'Non-blank', filteringSummary: 'Filtering {active} column(s) · {shown} / {total} rows', tableFiltered: 'Table filtered', columnFilterCleared: 'Column filter cleared', allTableFiltersCleared: 'All table filters cleared', sortCleared: 'Sort cleared', sortedAscending: 'Sorted ascending', sortedDescending: 'Sorted descending', columnCopied: 'Column copied', tableCopied: 'Table copied', csvSaved: 'CSV saved', csvSaveFailed: 'Failed to save CSV', tableWidthChanged: 'Table width changed', tableSizeChanged: 'Table size changed', columnWidthResize: 'Resize column width', mermaidZoom: 'Zoom', mermaidZoomOut: 'Zoom out', mermaidZoomIn: 'Zoom in', mermaidSource: 'Show source', mermaidOpen: 'Open diagram', popupBlocked: 'The new tab could not be opened. Please allow pop-ups.', mermaidDiagram: 'Mermaid diagram', documentSearch: 'Find in document', searchPlaceholder: 'Find', searchResults: 'Results: {n}', searchClose: 'Close search', searchPrevious: 'Previous match', searchNext: 'Next match'
+      settings: 'Display Settings', toc: 'Table of Contents', openSidebar: 'Open sidebar', searchToc: 'Search TOC', open: 'Open', notLoaded: 'Not loaded', loading: 'Open a local Markdown file or drag and drop it here.', emptyTitle: 'Markdown Viewer', emptyText: 'Open a Markdown file or drag and drop it here.', theme: 'Theme', system: 'System', light: 'Light', dark: 'Dark', contrast: 'High Contrast', fontSize: 'Font size', fontSizeMinus: '−', fontSizePlus: '＋', lineHeight: 'Line height', documentWidth: 'Document width', language: 'Language', english: 'English', japanese: 'Japanese', close: 'Close', widthMinus: '−', widthPlus: '＋', empty: 'The Markdown document is empty.', characters: '{n} characters', csvExportCancelled: 'CSV export cancelled', rendering: 'Rendering…', renderError: 'Load/render error', failed: 'Operation failed.', copied: 'Copied', codeCopied: 'Code copied.', clipboardUnavailable: 'Clipboard is unavailable.', codeCopy: 'Copy', codeWrap: 'Wrap', codeCollapse: 'Collapse', codeExpand: 'Expand', copyColumn: 'Copy column', tableFirstColumn: 'Freeze first column', tableFirstRow: 'Freeze header row', tableBoth: 'Freeze both', tableResetColumns: 'Reset column widths', tableResetSize: 'Reset table size', tableCopy: 'Copy', tableCsv: 'CSV', columnActions: 'Column actions', filterColumn: 'Filter', filterAllClear: 'Clear all', sortAscending: 'Sort ascending', sortDescending: 'Sort descending', sortClear: 'Clear sort', filterTitle: 'Filter “{title}”', filterInput: 'Enter text', filterSpecial: 'Special conditions', filterValues: 'Values', filterValueSearch: 'Search values', filterValuesTruncated: '{n} more values hidden — use value search to narrow', filterApply: 'Apply', filterReset: 'Clear', emptyValue: 'Blank', nonEmptyValue: 'Non-blank', filteringSummary: 'Filtering {active} column(s) · {shown} / {total} rows', tableFiltered: 'Table filtered', columnFilterCleared: 'Column filter cleared', allTableFiltersCleared: 'All table filters cleared', sortCleared: 'Sort cleared', sortedAscending: 'Sorted ascending', sortedDescending: 'Sorted descending', columnCopied: 'Column copied', tableCopied: 'Table copied', csvSaved: 'CSV saved', csvSaveFailed: 'Failed to save CSV', tableWidthChanged: 'Table width changed', tableSizeChanged: 'Table size changed', columnWidthResize: 'Resize column width', mermaidZoom: 'Zoom', mermaidZoomOut: 'Zoom out', mermaidZoomIn: 'Zoom in', mermaidSource: 'Show source', mermaidOpen: 'Open diagram', popupBlocked: 'The new tab could not be opened. Please allow pop-ups.', mermaidDiagram: 'Mermaid diagram', documentSearch: 'Find in document', searchPlaceholder: 'Find', searchResults: 'Results: {n}', searchClose: 'Close search', searchPrevious: 'Previous match', searchNext: 'Next match'
     }
   };
   M.t = function(key) {
@@ -64,7 +64,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
   };
   M.copy = function(text, msg) {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function() {
-      M.notify(msg || 'コピーしました')
+      M.notify(msg || M.t('copied'))
     }).catch (function() {
       fallback(text, msg)
     });
@@ -77,7 +77,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
         a.select();
         document.execCommand('copy');
         a.remove();
-        M.notify(m || 'コピーしました')
+        M.notify(m || M.t('copied'))
       } catch (e) {
         M.notify(M.t('clipboardUnavailable'))
       }
@@ -1431,8 +1431,15 @@ window.MarkdownViewer = window.MarkdownViewer || {
     }).then(async function() {
       if (request !== renderSequence) return;
       if ( ! String(text || '').trim()) {
-        M.notify(M.t('empty'));
-        if (M.vscode) hideLoadingOverlay();
+        var emptyDoc = document.querySelector('.doc');
+        if (emptyDoc) emptyDoc.innerHTML = '<div class="empty"><div class="empty-card"><p>' + M.t('empty') + '</p></div></div>';
+        var emptyFn = document.querySelector('.filename');
+        if (emptyFn) emptyFn.textContent = name;
+        var emptyStatus = document.getElementById('status');
+        if (emptyStatus) emptyStatus.textContent = M.t('characters').replace('{n}', '0');
+        renderedDocumentUri = documentUri || null;
+      if (M.vscode) M.vscode.setState({ uri: renderedDocumentUri });
+        if (M.vscode) { M.vscode.setState({ uri: renderedDocumentUri }); hideLoadingOverlay(); }
         return;
       }
       var main = document.querySelector('.main'), doc = document.querySelector('.doc');
@@ -1456,7 +1463,7 @@ window.MarkdownViewer = window.MarkdownViewer || {
         installDocumentLinkNavigation(doc);
         if (M.enhanceCodeBlocks) M.enhanceCodeBlocks(doc);
         document.querySelector('.filename').textContent = name;
-        document.getElementById('status').textContent = text.length.toLocaleString() + '文字';
+        document.getElementById('status').textContent = M.t('characters').replace('{n}', text.length.toLocaleString());
         M.buildToc(doc);
         M.initTables(doc);
         installSourceNavigation(text);
@@ -1510,6 +1517,38 @@ window.MarkdownViewer = window.MarkdownViewer || {
     });
     return activeRender;
   }
+  var HOST_KEYS = { theme: 'theme', fontSize: 'fontSize', lineHeight: 'lineHeight', docWidth: 'contentWidth', language: 'language' };
+  var lastHostSettings = {};
+  var hostSettingsReady = false;
+  function applyHostSettings(settings) {
+    hostSettingsReady = true;
+    Object.keys(HOST_KEYS).forEach(function(k) {
+      var hostKey = HOST_KEYS[k];
+      if (settings[hostKey] !== undefined) { M.settings[k] = settings[hostKey]; lastHostSettings[k] = settings[hostKey]; }
+    });
+    try { localStorage.setItem('markdown-viewer-settings-v5', JSON.stringify(M.settings)); } catch (ignore) {}
+    M.applySettings(); M.refreshText(); M.updateSidebarButton();
+    if (M.redrawMermaid) M.redrawMermaid();
+  }
+  M.onSettingsChanged = function(settings) {
+    if (!hostSettingsReady) return;
+    Object.keys(HOST_KEYS).forEach(function(k) {
+      if (settings[k] !== lastHostSettings[k]) {
+        lastHostSettings[k] = settings[k];
+        M.vscode.postMessage({ type: 'updateSetting', key: k, value: settings[k] });
+      }
+    });
+  };
+  M.exportCsv = function(csvText, suggestedName) {
+    if (M.vscode) { M.vscode.postMessage({ type: 'exportCsv', csv: csvText, name: suggestedName }); return; }
+    try {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8' }));
+      a.download = suggestedName || 'table.csv'; a.click();
+      setTimeout(function() { URL.revokeObjectURL(a.href); }, 30000);
+      M.notify(M.t('csvSaved'));
+    } catch (e) { M.notify(M.t('csvSaveFailed')); }
+  };
   M.loadText = loadText;
   shell();
   M.refreshText();
@@ -1541,6 +1580,11 @@ window.MarkdownViewer = window.MarkdownViewer || {
         if (M.vscode) M.vscode.postMessage({
           type: 'renderPrepared', requestId: msg.requestId
         });
+        return;
+      }
+      if (msg.type === 'settings') { applyHostSettings(msg.settings || {}); return; }
+      if (msg.type === 'exportCsvResult') {
+        M.notify(msg.ok ? M.t('csvSaved') : (msg.cancelled ? M.t('csvExportCancelled') : M.t('csvSaveFailed')));
         return;
       }
       if (msg.type === 'renderReady') {
