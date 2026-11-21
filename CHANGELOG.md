@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.10
+
+- Fixed CSV export so row-ending quotes are preserved and no stray apostrophes are appended to rows.
+- Reworked CSV formula protection to add a leading apostrophe only inside fields that begin with a formula-sensitive character.
+- Preserved CRLF/LF line endings, quoted fields, escaped quotes, and embedded line breaks during CSV export.
+
 ## 1.2.9
 
 - Fixed wrapping for long unbroken text in Markdown prose, tables, and the table of contents while preserving code-block wrapping controls.
